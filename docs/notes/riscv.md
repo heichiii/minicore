@@ -13,7 +13,46 @@ RISCV has base instructions and different extensions depending on the real requi
 - If the V vector extension is present: 32 vector registers, v0–v31.
 
 - There is also a separate program counter (PC) and many CSRs control/status registers.
+
+### ABI names
+
+| Register | ABI name | Role                    |
+| -------- | -------- | ----------------------- |
+| x0       | zero     | constant 0              |
+| x1       | ra       | return address          |
+| x2       | sp       | stack pointer           |
+| x3       | gp       | global pointer          |
+| x4       | tp       | thread pointer          |
+| x5       | t0       | temporary               |
+| x6       | t1       | temporary               |
+| x7       | t2       | temporary               |
+| x8       | s0/fp    | saved / frame pointer   |
+| x9       | s1       | saved                   |
+| x10      | a0       | argument / return value |
+| x11      | a1       | argument / return value |
+| x12      | a2       | argument                |
+| x13      | a3       | argument                |
+| x14      | a4       | argument                |
+| x15      | a5       | argument                |
+| x16      | a6       | argument                |
+| x17      | a7       | argument                |
+| x18      | s2       | saved                   |
+| x19      | s3       | saved                   |
+| x20      | s4       | saved                   |
+| x21      | s5       | saved                   |
+| x22      | s6       | saved                   |
+| x23      | s7       | saved                   |
+| x24      | s8       | saved                   |
+| x25      | s9       | saved                   |
+| x26      | s10      | saved                   |
+| x27      | s11      | saved                   |
+| x28      | t3       | temporary               |
+| x29      | t4       | temporary               |
+| x30      | t5       | temporary               |
+| x31      | t6       | temporary               |
+
 # Privilege modes
+
 ## U S H M
 
 The privilege levels are numbered from 0 (least privileged) to 3 (most privileged). The core levels are U, S, and M.
