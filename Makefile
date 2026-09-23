@@ -2,6 +2,9 @@ CROSS ?= riscv64-unknown-elf-
 CC := $(CROSS)gcc
 QEMU ?= qemu-system-riscv64
 GDB ?= gdb-multiarch
+PYTHON ?= python3
+QEMU_MACHINE ?= virt
+QEMU_MEMORY ?= 256M
 
 TARGET := build/kernel.elf
 LINKER_SCRIPT := src/linker/linker.ld
@@ -10,7 +13,7 @@ ARCH := -march=rv64imac -mabi=lp64 -mcmodel=medany
 CFLAGS := $(ARCH) -std=c11 -O2 -g -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-pie
 
-.PHONY: all run test debug gdb clean
+.PHONY: all run test debug gdb layout clean
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LINKER_SCRIPT)
@@ -57,6 +60,16 @@ debug: $(TARGET)
 
 gdb: $(TARGET)
 	$(GDB) $(TARGET) -ex 'target remote :1234'
+
+layout: $(TARGET)
+	$(PYTHON) tools/generate-layout.py \
+		--elf $(TARGET) \
+		--readelf $(CROSS)readelf \
+		--nm $(CROSS)nm \
+		--qemu $(QEMU) \
+		--machine $(QEMU_MACHINE) \
+		--memory $(QEMU_MEMORY) \
+		--output build/layout.html
 
 clean:
 	rm -rf build
