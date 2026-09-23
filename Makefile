@@ -4,7 +4,8 @@ QEMU ?= qemu-system-riscv64
 GDB ?= gdb-multiarch
 
 TARGET := build/kernel.elf
-OBJS := build/main.o build/runtime.o build/qemu-virt.o build/head.o
+LINKER_SCRIPT := src/linker/linker.ld
+OBJS := build/main.o build/runtime.o build/dtb.o build/qemu-virt.o build/head.o
 ARCH := -march=rv64imac -mabi=lp64 -mcmodel=medany
 CFLAGS := $(ARCH) -std=c11 -O2 -g -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-pie
@@ -12,19 +13,23 @@ CFLAGS := $(ARCH) -std=c11 -O2 -g -Wall -Wextra -Werror \
 .PHONY: all run test debug gdb clean
 all: $(TARGET)
 
-$(TARGET): $(OBJS) src/arch/riscv/linker.ld
+$(TARGET): $(OBJS) $(LINKER_SCRIPT)
 	$(CC) $(ARCH) -nostdlib -static -no-pie -Wl,--build-id=none \
-		-T src/arch/riscv/linker.ld $(OBJS) -lgcc -o $@
+		-T $(LINKER_SCRIPT) $(OBJS) -lgcc -o $@
 
-build/main.o: src/main.c
+build/main.o: src/main.c src/platform/dtb.h src/platform/platform.h src/runtime.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/runtime.o: src/runtime.c
+build/runtime.o: src/runtime.c src/runtime.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/qemu-virt.o: src/platform/qemu-virt.c
+build/dtb.o: src/platform/dtb.c src/platform/dtb.h src/runtime.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/qemu-virt.o: src/platform/qemu-virt.c src/platform/platform.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -37,9 +42,14 @@ run: $(TARGET)
 		-bios default -kernel $(TARGET)
 
 test: $(TARGET)
+	@timeout 10s $(QEMU) -machine virt -m 32M -smp 1 -nographic \
+		-bios default -kernel $(TARGET) | tee build/test-32m.log
+	@grep -q 'ram: base=0x0000000080000000 size=0x0000000002000000' build/test-32m.log
+	@grep -q 'M1 DTB PASS' build/test-32m.log
 	@timeout 10s $(QEMU) -machine virt -m 256M -smp 1 -nographic \
-		-bios default -kernel $(TARGET) | tee build/test.log
-	@grep -q 'M0 PASS' build/test.log
+		-bios default -kernel $(TARGET) | tee build/test-256m.log
+	@grep -q 'ram: base=0x0000000080000000 size=0x0000000010000000' build/test-256m.log
+	@grep -q 'M1 DTB PASS' build/test-256m.log
 
 debug: $(TARGET)
 	$(QEMU) -machine virt -m 256M -smp 1 -nographic \

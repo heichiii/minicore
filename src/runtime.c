@@ -10,6 +10,20 @@ void *memcpy(void *restrict dst, const void *restrict src, size_t n)
     return dst;
 }
 
+int memcmp(const void *left, const void *right, size_t n)
+{
+    const unsigned char *a = left;
+    const unsigned char *b = right;
+
+    while (n--) {
+        if (*a != *b)
+            return *a < *b ? -1 : 1;
+        ++a;
+        ++b;
+    }
+    return 0;
+}
+
 void *memmove(void *dst, const void *src, size_t n)
 {
     unsigned char *d = dst;

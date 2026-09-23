@@ -14,9 +14,13 @@ At entry:
 stack, clears `.bss`, and calls `kernel_main(hart_id, dtb)`. The initial stack
 is 16 KiB and is part of `.bss`. Only the boot hart is supported in M0.
 
-The linker keeps the kernel above OpenSBI's reserved area. M0 runs with the MMU
-off, so linked addresses are physical addresses. The DTB must remain intact
-until a later milestone parses and copies the required information.
+The linker keeps the kernel above OpenSBI's reserved area. M1 still runs with
+the MMU off, so linked addresses are physical addresses. The M1 DTB reader
+validates the flattened tree and copies RAM, reserved ranges, UART, PLIC,
+VirtIO-MMIO, their relevant interrupt IDs, and timer frequency into
+native-endian `boot_info`. The original
+DTB remains immutable and its physical extent is retained in `boot_info` so the
+M2 page allocator can reserve it.
 QEMU `virt` UART and test-finisher code lives in `src/platform/qemu-virt.c`.
 
 Build and test:
