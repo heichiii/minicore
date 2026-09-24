@@ -14,6 +14,7 @@ struct trap_frame {
 
 void trap_init(void);
 bool trap_run_m1_tests(uint64_t timebase_frequency);
+bool trap_expect_page_fault(volatile uint64_t *address, bool write);
 void trap_dispatch(struct trap_frame *frame);
 
 #endif

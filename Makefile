@@ -9,12 +9,13 @@ QEMU_MEMORY ?= 256M
 TARGET := build/kernel.elf
 LINKER_SCRIPT := src/linker/linker.ld
 OBJS := build/main.o build/runtime.o build/dtb.o build/qemu-virt.o \
-	build/plic.o build/sbi.o build/trap.o build/trap-asm.o build/head.o
+	build/plic.o build/sbi.o build/trap.o build/page_alloc.o build/vm.o \
+	build/trap-asm.o build/head.o
 ARCH := -march=rv64imac_zicsr_zicntr -mabi=lp64 -mcmodel=medany
 CFLAGS := $(ARCH) -std=c11 -O2 -g -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-pie
 
-.PHONY: all run debug gdb layout clean
+.PHONY: all run test debug gdb layout clean
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LINKER_SCRIPT)
@@ -51,6 +52,16 @@ build/trap.o: src/arch/riscv/trap.c src/arch/riscv/trap.h \
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
+build/page_alloc.o: src/mm/page_alloc.c src/mm/page_alloc.h src/mm/layout.h \
+		src/platform/dtb.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/vm.o: src/mm/vm.c src/mm/vm.h src/mm/page_alloc.h src/mm/layout.h \
+		src/platform/dtb.h src/runtime.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
 build/trap-asm.o: src/arch/riscv/trap.S
 	@mkdir -p build
 	$(CC) $(ARCH) -g -c $< -o $@
@@ -62,6 +73,15 @@ build/head.o: src/arch/riscv/head.S
 run: $(TARGET)
 	$(QEMU) -machine virt -m 256M -smp 1 -nographic \
 		-bios default -kernel $(TARGET)
+
+test: $(TARGET)
+	@set -e; for memory in 256M 32M; do \
+		log=build/test-$$memory.log; \
+		timeout 20s $(QEMU) -machine virt -m $$memory -smp 1 -nographic \
+			-bios default -kernel $(TARGET) >$$log 2>&1; \
+		grep -q "M2 PASS" $$log; \
+		echo "M2 $$memory PASS"; \
+	done
 
 debug: $(TARGET)
 	$(QEMU) -machine virt -m 256M -smp 1 -nographic \

@@ -1,7 +1,10 @@
 #include "platform.h"
 
-#define UART0 ((volatile uint8_t *)0x10000000)
-#define QEMU_TEST ((volatile uint32_t *)0x00100000)
+#include "../mm/layout.h"
+
+#define UART0 ((volatile uint8_t *)(KERNEL_DIRECT_BASE + UINT64_C(0x10000000)))
+#define QEMU_TEST \
+    ((volatile uint32_t *)(KERNEL_DIRECT_BASE + UINT64_C(0x00100000)))
 
 void console_putc(char ch)
 {

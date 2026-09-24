@@ -11,10 +11,14 @@ make
 make run
 ```
 
-During boot the kernel checks DTB discovery, deliberately handles
+During boot the high-half kernel checks DTB discovery, deliberately handles
 illegal-instruction, breakpoint, and load-access-fault exceptions, then
 delivers three SBI timer interrupts while verifying every saved integer
-register. A successful boot prints `M1 PASS` and exits QEMU.
+register. It then installs its final Sv39 page table and tests physical-page
+allocation, mapping, protection, unmapping, page-table reclamation, read-only
+text, and the kernel-stack guard page. A successful boot prints `M2 PASS` and
+exits QEMU. `make test` runs this acceptance test with both 256 MiB and 32 MiB
+of RAM.
 
 ## Memory layout report
 

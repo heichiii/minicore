@@ -41,4 +41,12 @@ static inline void csr_clear_sie(uint64_t bits)
     __asm__ volatile("csrc sie, %0" : : "r"(bits) : "memory");
 }
 
+static inline uint64_t csr_read_satp(void)
+{
+    uint64_t value;
+
+    __asm__ volatile("csrr %0, satp" : "=r"(value));
+    return value;
+}
+
 #endif

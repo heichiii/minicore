@@ -2,6 +2,8 @@
 
 #include <stddef.h>
 
+#include "../mm/layout.h"
+
 /* QEMU virt assigns M/S contexts consecutively for each hart. */
 #define PLIC_ENABLE_BASE UINT64_C(0x2000)
 #define PLIC_ENABLE_STRIDE UINT64_C(0x80)
@@ -22,7 +24,7 @@ bool plic_init(const struct boot_info *info, uint64_t hart_id)
     if (!info || !info->plic_present || info->plic.size < 0x210000 ||
         hart_id > (UINT64_MAX - 1) / 2)
         return false;
-    plic_base = (uintptr_t)info->plic.base;
+    plic_base = (uintptr_t)phys_to_virt(info->plic.base);
     plic_sources = info->plic_source_count;
     plic_context = hart_id * 2 + 1;
     *plic_register(PLIC_CONTEXT_BASE + plic_context * PLIC_CONTEXT_STRIDE) = 0;

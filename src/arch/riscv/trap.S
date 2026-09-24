@@ -132,7 +132,10 @@ trap_register_test:
     sd s9, 96(sp)
     sd s10, 104(sp)
     sd s11, 112(sp)
+    .option push
+    .option norelax
     la t0, trap_register_test_sp
+    .option pop
     sd sp, 0(t0)
 
     li ra, 1
@@ -172,7 +175,10 @@ trap_register_window_start:
 
     .globl trap_register_window_end
 trap_register_window_end:
+    .option push
+    .option norelax
     la t0, trap_register_test_sp
+    .option pop
     ld sp, 0(t0)
     ld ra, 0(sp)
     ld gp, 8(sp)

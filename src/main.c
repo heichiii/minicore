@@ -2,7 +2,11 @@
 #include <stdint.h>
 
 #include "arch/riscv/sbi.h"
+#include "arch/riscv/csr.h"
 #include "arch/riscv/trap.h"
+#include "mm/layout.h"
+#include "mm/page_alloc.h"
+#include "mm/vm.h"
 #include "platform/dtb.h"
 #include "platform/plic.h"
 #include "platform/platform.h"
@@ -10,9 +14,11 @@
 
 extern char __kernel_start[], __text_end[], __rodata_end[];
 extern char __data_end[], __bss_start[], __bss_end[], __kernel_end[];
+extern char __text_start[], __boot_stack_guard[];
 
 static uint64_t bss_test;
 static struct boot_info boot_info;
+static struct page_table kernel_page_table;
 
 static _Noreturn void panic(const char *message)
 {
@@ -44,12 +50,56 @@ static void print_range(const char *name, const struct physical_range *range)
     console_putc('\n');
 }
 
+static bool run_vm_tests(void)
+{
+    const uint64_t test_virtual = UINT64_C(0xffffffd000000000);
+    struct page_table temporary;
+    size_t baseline = page_free_count();
+    uint64_t page = page_alloc();
+    uint64_t physical;
+    uint64_t flags;
+
+    if (!page || !vm_create(&temporary))
+        return false;
+    if (!vm_map(&temporary, test_virtual, page, PTE_R | PTE_W) ||
+        !vm_query(&temporary, test_virtual + 17, &physical, &flags) ||
+        physical != page + 17 || (flags & (PTE_R | PTE_W | PTE_A | PTE_D)) !=
+                                     (PTE_R | PTE_W | PTE_A | PTE_D) ||
+        !vm_protect(&temporary, test_virtual, PTE_R) ||
+        !vm_unmap(&temporary, test_virtual))
+        return false;
+    vm_destroy(&temporary);
+    page_free(page);
+    if (page_free_count() != baseline)
+        return false;
+
+    page = page_alloc();
+    if (!page || !vm_map(&kernel_page_table, test_virtual, page,
+                         PTE_R | PTE_W))
+        return false;
+    *(volatile uint64_t *)(uintptr_t)test_virtual = UINT64_C(0x123456789abcdef0);
+    if (*(volatile uint64_t *)(uintptr_t)test_virtual !=
+            UINT64_C(0x123456789abcdef0) ||
+        !vm_unmap(&kernel_page_table, test_virtual) ||
+        !trap_expect_page_fault((volatile uint64_t *)(uintptr_t)test_virtual,
+                                true))
+        return false;
+    page_free(page);
+
+    if (!trap_expect_page_fault((volatile uint64_t *)__text_start, true) ||
+        !trap_expect_page_fault((volatile uint64_t *)__boot_stack_guard,
+                                false) ||
+        page_free_count() != baseline)
+        return false;
+    return true;
+}
+
 _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
 {
     enum dtb_error error;
     char test[4];
 
-    console_puts("\nMiniCore M1\nhart = ");
+    console_puts("\nMiniCore M2\nhart = ");
     console_puthex(hart_id);
     console_puts("\ndtb  = ");
     console_puthex((uintptr_t)dtb);
@@ -76,6 +126,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
         console_putc('\n');
         panic("cannot parse DTB");
     }
+    boot_info.dtb_base = virt_to_phys((const void *)boot_info.dtb_base);
 
     console_puts("dtb size = ");
     console_puthex(boot_info.dtb_size);
@@ -109,5 +160,23 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
         panic("trap/timer self-test failed");
     console_puts("M1 TRAP PASS\n");
     console_puts("M1 PASS\n");
+
+    if (!page_allocator_init(&boot_info, virt_to_phys(__kernel_start),
+                             virt_to_phys(__kernel_end), boot_info.dtb_base,
+                             boot_info.dtb_size))
+        panic("cannot initialize physical page allocator");
+    console_puts("free pages = ");
+    console_puthex(page_free_count());
+    console_putc('\n');
+    if (!vm_build_kernel(&kernel_page_table, &boot_info))
+        panic("cannot build kernel page table");
+    vm_activate(&kernel_page_table);
+    if ((csr_read_satp() >> 60) != 8)
+        panic("Sv39 is not active");
+    console_puts("M2 SATP PASS\n");
+    if (!run_vm_tests())
+        panic("physical page/Sv39 self-test failed");
+    console_puts("M2 VM PASS\n");
+    console_puts("M2 PASS\n");
     platform_exit(true);
 }

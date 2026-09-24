@@ -9,6 +9,8 @@
 #define EXCEPTION_ILLEGAL_INSTRUCTION UINT64_C(2)
 #define EXCEPTION_BREAKPOINT UINT64_C(3)
 #define EXCEPTION_LOAD_ACCESS_FAULT UINT64_C(5)
+#define EXCEPTION_LOAD_PAGE_FAULT UINT64_C(13)
+#define EXCEPTION_STORE_PAGE_FAULT UINT64_C(15)
 #define INTERRUPT_SUPERVISOR_TIMER UINT64_C(5)
 
 _Static_assert(sizeof(struct trap_frame) == 36 * sizeof(uint64_t),
@@ -37,6 +39,10 @@ static volatile uint32_t register_ticks;
 static volatile uint32_t register_failures;
 static size_t exception_index;
 static bool test_running;
+static volatile bool page_fault_test_running;
+static volatile bool page_fault_seen;
+static volatile uint64_t expected_page_fault;
+static volatile uintptr_t expected_fault_address;
 
 static void print_trap(const char *kind, const struct trap_frame *frame)
 {
@@ -118,6 +124,16 @@ void trap_dispatch(struct trap_frame *frame)
         unexpected("unexpected interrupt", frame);
     }
 
+    if (page_fault_test_running && code == expected_page_fault &&
+        frame->stval == expected_fault_address) {
+        print_trap(code == EXCEPTION_LOAD_PAGE_FAULT ? "load page fault"
+                                                     : "store page fault",
+                   frame);
+        page_fault_seen = true;
+        frame->sepc += trapped_instruction_size(frame->sepc);
+        return;
+    }
+
     print_trap(exception_name(code), frame);
     if (test_running && exception_index <
             sizeof(expected_exceptions) / sizeof(expected_exceptions[0]) &&
@@ -128,6 +144,24 @@ void trap_dispatch(struct trap_frame *frame)
     }
 
     unexpected("unhandled exception", frame);
+}
+
+bool trap_expect_page_fault(volatile uint64_t *address, bool write)
+{
+    uint64_t ignored = 0;
+
+    expected_page_fault = write ? EXCEPTION_STORE_PAGE_FAULT
+                                : EXCEPTION_LOAD_PAGE_FAULT;
+    expected_fault_address = (uintptr_t)address;
+    page_fault_seen = false;
+    page_fault_test_running = true;
+    if (write)
+        *address = UINT64_C(0xfeedfacecafebeef);
+    else
+        ignored = *address;
+    page_fault_test_running = false;
+    __asm__ volatile("" : : "r"(ignored) : "memory");
+    return page_fault_seen;
 }
 
 void trap_init(void)
