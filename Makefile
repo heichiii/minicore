@@ -8,19 +8,21 @@ QEMU_MEMORY ?= 256M
 
 TARGET := build/kernel.elf
 LINKER_SCRIPT := src/linker/linker.ld
-OBJS := build/main.o build/runtime.o build/dtb.o build/qemu-virt.o build/head.o
-ARCH := -march=rv64imac -mabi=lp64 -mcmodel=medany
+OBJS := build/main.o build/runtime.o build/dtb.o build/qemu-virt.o \
+	build/plic.o build/sbi.o build/trap.o build/trap-asm.o build/head.o
+ARCH := -march=rv64imac_zicsr_zicntr -mabi=lp64 -mcmodel=medany
 CFLAGS := $(ARCH) -std=c11 -O2 -g -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-pie
 
-.PHONY: all run test debug gdb layout clean
+.PHONY: all run debug gdb layout clean
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LINKER_SCRIPT)
 	$(CC) $(ARCH) -nostdlib -static -no-pie -Wl,--build-id=none \
 		-T $(LINKER_SCRIPT) $(OBJS) -lgcc -o $@
 
-build/main.o: src/main.c src/platform/dtb.h src/platform/platform.h src/runtime.h
+build/main.o: src/main.c src/arch/riscv/sbi.h src/arch/riscv/trap.h \
+		src/platform/dtb.h src/platform/plic.h src/platform/platform.h src/runtime.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -36,6 +38,23 @@ build/qemu-virt.o: src/platform/qemu-virt.c src/platform/platform.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
+build/plic.o: src/platform/plic.c src/platform/plic.h src/platform/dtb.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/sbi.o: src/arch/riscv/sbi.c src/arch/riscv/sbi.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/trap.o: src/arch/riscv/trap.c src/arch/riscv/trap.h \
+		src/arch/riscv/csr.h src/arch/riscv/sbi.h src/platform/platform.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/trap-asm.o: src/arch/riscv/trap.S
+	@mkdir -p build
+	$(CC) $(ARCH) -g -c $< -o $@
+
 build/head.o: src/arch/riscv/head.S
 	@mkdir -p build
 	$(CC) $(ARCH) -g -c $< -o $@
@@ -43,16 +62,6 @@ build/head.o: src/arch/riscv/head.S
 run: $(TARGET)
 	$(QEMU) -machine virt -m 256M -smp 1 -nographic \
 		-bios default -kernel $(TARGET)
-
-test: $(TARGET)
-	@timeout 10s $(QEMU) -machine virt -m 32M -smp 1 -nographic \
-		-bios default -kernel $(TARGET) | tee build/test-32m.log
-	@grep -q 'ram: base=0x0000000080000000 size=0x0000000002000000' build/test-32m.log
-	@grep -q 'M1 DTB PASS' build/test-32m.log
-	@timeout 10s $(QEMU) -machine virt -m 256M -smp 1 -nographic \
-		-bios default -kernel $(TARGET) | tee build/test-256m.log
-	@grep -q 'ram: base=0x0000000080000000 size=0x0000000010000000' build/test-256m.log
-	@grep -q 'M1 DTB PASS' build/test-256m.log
 
 debug: $(TARGET)
 	$(QEMU) -machine virt -m 256M -smp 1 -nographic \

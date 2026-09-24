@@ -2,6 +2,20 @@
 
 This is a mini os referencing rCore with a dead predecessor https://github.com/heichiii/mycore.
 
+## Build and run
+
+The kernel targets RV64 S-mode on QEMU `virt` and boots through OpenSBI:
+
+```sh
+make
+make run
+```
+
+During boot the kernel checks DTB discovery, deliberately handles
+illegal-instruction, breakpoint, and load-access-fault exceptions, then
+delivers three SBI timer interrupts while verifying every saved integer
+register. A successful boot prints `M1 PASS` and exits QEMU.
+
 ## Memory layout report
 
 Build the kernel and generate a self-contained HTML visualization of its ELF

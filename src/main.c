@@ -1,7 +1,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "arch/riscv/sbi.h"
+#include "arch/riscv/trap.h"
 #include "platform/dtb.h"
+#include "platform/plic.h"
 #include "platform/platform.h"
 #include "runtime.h"
 
@@ -97,5 +100,14 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
         panic("DTB is missing required QEMU virt hardware");
 
     console_puts("M1 DTB PASS\n");
+    if (!plic_init(&boot_info, hart_id))
+        panic("cannot initialize PLIC interface");
+    if (!sbi_probe_extension(SBI_EXT_TIME))
+        panic("SBI TIME extension is unavailable");
+    trap_init();
+    if (!trap_run_m1_tests(boot_info.timebase_frequency))
+        panic("trap/timer self-test failed");
+    console_puts("M1 TRAP PASS\n");
+    console_puts("M1 PASS\n");
     platform_exit(true);
 }
