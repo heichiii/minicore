@@ -10,6 +10,12 @@
     .globl trap_entry
     .type trap_entry, @function
 trap_entry:
+    /* sscratch is zero in S-mode.  While U-mode runs it contains the kernel
+     * stack pointer, so this swap selects a safe stack before any store. */
+    csrrw sp, sscratch, sp
+    bnez sp, .Ltrap_have_stack
+    csrrw sp, sscratch, sp
+.Ltrap_have_stack:
     addi sp, sp, -TF_SIZE
     sd zero, TF_X(0)(sp)
     sd ra, TF_X(1)(sp)
@@ -67,11 +73,13 @@ trap_entry:
     ld t0, TF_SSTATUS(sp)
     csrw sstatus, t0
 
+    /* Keep the saved privilege bit as an epilogue discriminator. */
+    andi t0, t0, (1 << 8)
+    sd t0, TF_STVAL(sp)
+
     ld ra, TF_X(1)(sp)
     ld gp, TF_X(3)(sp)
     ld tp, TF_X(4)(sp)
-    ld t0, TF_X(5)(sp)
-    ld t1, TF_X(6)(sp)
     ld t2, TF_X(7)(sp)
     ld s0, TF_X(8)(sp)
     ld s1, TF_X(9)(sp)
@@ -97,7 +105,22 @@ trap_entry:
     ld t4, TF_X(29)(sp)
     ld t5, TF_X(30)(sp)
     ld t6, TF_X(31)(sp)
+
+    ld t0, TF_STVAL(sp)
+    beqz t0, .Ltrap_return_user
+    csrw sscratch, zero
+    ld t0, TF_X(5)(sp)
+    ld t1, TF_X(6)(sp)
     ld sp, TF_X(2)(sp)
+    sret
+
+.Ltrap_return_user:
+    ld t0, TF_X(2)(sp)
+    csrw sscratch, t0
+    ld t0, TF_X(5)(sp)
+    ld t1, TF_X(6)(sp)
+    addi sp, sp, TF_SIZE
+    csrrw sp, sscratch, sp
     sret
     .size trap_entry, . - trap_entry
 
@@ -198,5 +221,64 @@ trap_register_window_end:
     addi sp, sp, 128
     ret
     .size trap_register_test, . - trap_register_test
+
+    .align 2
+    .globl user_enter
+    .type user_enter, @function
+user_enter:
+    addi sp, sp, -128
+    sd ra, 0(sp)
+    sd gp, 8(sp)
+    sd tp, 16(sp)
+    sd s0, 24(sp)
+    sd s1, 32(sp)
+    sd s2, 40(sp)
+    sd s3, 48(sp)
+    sd s4, 56(sp)
+    sd s5, 64(sp)
+    sd s6, 72(sp)
+    sd s7, 80(sp)
+    sd s8, 88(sp)
+    sd s9, 96(sp)
+    sd s10, 104(sp)
+    sd s11, 112(sp)
+    .option push
+    .option norelax
+    la t0, user_kernel_sp
+    .option pop
+    sd sp, 0(t0)
+
+    csrw sepc, a0
+    csrr t0, sstatus
+    li t1, ((1 << 8) | (1 << 1))
+    not t1, t1
+    and t0, t0, t1
+    ori t0, t0, (1 << 5)
+    csrw sstatus, t0
+    csrw sscratch, sp
+    mv sp, a1
+    mv a0, a2
+    sret
+
+    .globl user_resume_kernel
+user_resume_kernel:
+    ld ra, 0(sp)
+    ld gp, 8(sp)
+    ld tp, 16(sp)
+    ld s0, 24(sp)
+    ld s1, 32(sp)
+    ld s2, 40(sp)
+    ld s3, 48(sp)
+    ld s4, 56(sp)
+    ld s5, 64(sp)
+    ld s6, 72(sp)
+    ld s7, 80(sp)
+    ld s8, 88(sp)
+    ld s9, 96(sp)
+    ld s10, 104(sp)
+    ld s11, 112(sp)
+    addi sp, sp, 128
+    ret
+    .size user_enter, . - user_enter
 
     .section .note.GNU-stack, "", @progbits

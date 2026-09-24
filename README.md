@@ -16,9 +16,11 @@ illegal-instruction, breakpoint, and load-access-fault exceptions, then
 delivers three SBI timer interrupts while verifying every saved integer
 register. It then installs its final Sv39 page table and tests physical-page
 allocation, mapping, protection, unmapping, page-table reclamation, read-only
-text, and the kernel-stack guard page. A successful boot prints `M2 PASS` and
-exits QEMU. `make test` runs this acceptance test with both 256 MiB and 32 MiB
-of RAM.
+text, and the kernel-stack guard page. It then runs an embedded U-mode program
+through the `write` and `exit` syscall ABI and checks cross-page copies, bad
+pointers, kernel isolation, RX user text, and complete address-space teardown.
+A successful boot prints `M3 PASS` and exits QEMU. `make test` runs this
+acceptance test with both 256 MiB and 32 MiB of RAM.
 
 ## Memory layout report
 

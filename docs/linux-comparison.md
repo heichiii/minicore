@@ -17,3 +17,16 @@ Both designs separate executable code, read-only data, writable data, and
 guard regions. MiniCore also avoids a writable direct-map alias for its text,
 but does not yet implement Linux's broader hardening, sparse-memory support,
 or dynamic direct-map permission changes.
+
+## M3: user access and file-backed writes
+
+Linux normally copies user memory using architecture-specific fault-table
+fixups and tightly scoped supervisor access. MiniCore M3 instead walks its small
+Sv39 table, validates every page, and copies through the direct map while SUM
+remains disabled. This avoids kernel faults now, at the cost of not supporting
+demand paging during copies.
+
+Like Linux, the syscall layer writes through a descriptor and operation table
+rather than calling the UART directly. M3 has a fixed three-entry fd table and
+one console file; reference counting, VFS objects, and concurrent access arrive
+in later milestones.

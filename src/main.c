@@ -4,6 +4,7 @@
 #include "arch/riscv/sbi.h"
 #include "arch/riscv/csr.h"
 #include "arch/riscv/trap.h"
+#include "kernel/user.h"
 #include "mm/layout.h"
 #include "mm/page_alloc.h"
 #include "mm/vm.h"
@@ -99,7 +100,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     enum dtb_error error;
     char test[4];
 
-    console_puts("\nMiniCore M2\nhart = ");
+    console_puts("\nMiniCore M3\nhart = ");
     console_puthex(hart_id);
     console_puts("\ndtb  = ");
     console_puthex((uintptr_t)dtb);
@@ -178,5 +179,10 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
         panic("physical page/Sv39 self-test failed");
     console_puts("M2 VM PASS\n");
     console_puts("M2 PASS\n");
+    if (!user_run_m3_tests(&kernel_page_table))
+        panic("U-mode/syscall self-test failed");
+    console_puts("M3 COPY PASS\n");
+    console_puts("M3 ISOLATION PASS\n");
+    console_puts("M3 PASS\n");
     platform_exit(true);
 }

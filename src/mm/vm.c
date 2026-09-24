@@ -64,6 +64,22 @@ bool vm_create(struct page_table *table)
     return true;
 }
 
+bool vm_create_user(struct page_table *table,
+                    const struct page_table *kernel_table)
+{
+    uint64_t *root;
+    const uint64_t *kernel_root;
+
+    if (!kernel_table || !kernel_table->root || !vm_create(table))
+        return false;
+    root = root_pointer(table);
+    kernel_root = root_pointer(kernel_table);
+    /* Sv39 lower half is private to the process.  The upper-half kernel
+     * mappings are shared and contain no PTE_U leaves. */
+    memcpy(root + 256, kernel_root + 256, 256 * sizeof(*root));
+    return true;
+}
+
 static uint64_t *walk(struct page_table *table, uint64_t address, bool create)
 {
     uint64_t *entries;
@@ -202,6 +218,24 @@ void vm_destroy(struct page_table *table)
     if (!table || !table->root)
         return;
     destroy_level(table->root, 2);
+    table->root = 0;
+}
+
+void vm_destroy_user(struct page_table *table)
+{
+    uint64_t *root;
+
+    if (!table || !table->root)
+        return;
+    root = root_pointer(table);
+    for (size_t i = 0; i < 256; ++i) {
+        uint64_t entry = root[i];
+
+        if ((entry & PTE_V) != 0 &&
+            (entry & (PTE_R | PTE_W | PTE_X)) == 0)
+            destroy_level(pte_physical(entry), 1);
+    }
+    page_free(table->root);
     table->root = 0;
 }
 

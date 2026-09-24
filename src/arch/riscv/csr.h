@@ -6,6 +6,9 @@
 #define SCAUSE_INTERRUPT (UINT64_C(1) << 63)
 
 #define SSTATUS_SIE (UINT64_C(1) << 1)
+#define SSTATUS_SPIE (UINT64_C(1) << 5)
+#define SSTATUS_SPP (UINT64_C(1) << 8)
+#define SSTATUS_SUM (UINT64_C(1) << 18)
 #define SIE_STIE (UINT64_C(1) << 5)
 
 static inline uint64_t csr_read_time(void)

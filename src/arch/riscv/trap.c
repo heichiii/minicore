@@ -4,6 +4,7 @@
 
 #include "csr.h"
 #include "sbi.h"
+#include "../../kernel/user.h"
 #include "../../platform/platform.h"
 
 #define EXCEPTION_ILLEGAL_INSTRUCTION UINT64_C(2)
@@ -123,6 +124,9 @@ void trap_dispatch(struct trap_frame *frame)
         }
         unexpected("unexpected interrupt", frame);
     }
+
+    if (user_handle_trap(frame, code))
+        return;
 
     if (page_fault_test_running && code == expected_page_fault &&
         frame->stval == expected_fault_address) {
