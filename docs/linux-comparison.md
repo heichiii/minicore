@@ -49,3 +49,14 @@ while holding the condition lock, release it only after becoming non-runnable,
 and recheck conditions in a loop after wakeup. MiniCore currently relies on
 local interrupt exclusion because it is single-hart; this is not a substitute
 for global locking once SMP is enabled.
+
+## M5 step 1: process resources and execution context
+
+MiniCore now separates process-owned address-space resources from a thread's
+kernel stack and saved execution state. These roles correspond to the address
+space and task concepts in Linux, but MiniCore permits only one thread per
+process, uses a page ledger instead of VMAs, and has no PID or zombie interface
+yet. Kernel threads explicitly use the kernel page table rather than borrowing
+a user's active address space. Reaping runs after switching away from the dead
+thread's stack and page table. A kernel-only completion observer temporarily
+stands in for the later parent/child wait mechanism.

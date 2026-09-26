@@ -21,7 +21,11 @@ through the `write`, `exit`, and `yield` syscall ABI and checks cross-page copie
 pointers, kernel isolation, RX user text, and complete address-space teardown.
 A successful boot then exercises the M4 heap, kernel threads, register-safe
 round-robin switching, timer preemption, sleeping, and wait-queue based
-producer/consumer synchronization. It prints `M4 PASS` and exits QEMU.
+producer/consumer synchronization. It prints `M4 PASS`, then tests independently scheduled user processes,
+user register/stack preservation, fault isolation, low-memory rollback and
+complete reclamation. It prints `M5 USER THREAD PASS` and exits QEMU.
+This is [M5 step 1](docs/m5-user-threads.md); ELF loading and the full process
+lifecycle remain subsequent work.
 `make test` runs this acceptance test with both 256 MiB and 32 MiB of RAM.
 
 ## Memory layout report

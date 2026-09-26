@@ -22,6 +22,13 @@ trap_entry:
     sd t0, TF_X(5)(sp)
     addi t0, sp, TF_SIZE
     sd t0, TF_X(2)(sp)
+    csrr t0, sstatus
+    andi t0, t0, (1 << 8)
+    bnez t0, .Ltrap_saved_sp
+    csrr t0, sscratch
+    sd t0, TF_X(2)(sp)
+.Ltrap_saved_sp:
+    csrw sscratch, zero
     sd gp, TF_X(3)(sp)
     sd tp, TF_X(4)(sp)
     sd t1, TF_X(6)(sp)
@@ -68,6 +75,9 @@ trap_entry:
     mv a0, sp
     call trap_dispatch
 
+    .globl user_thread_enter
+user_thread_enter:
+    /* sp points to this thread's initial or trapped user frame. */
     ld t0, TF_SEPC(sp)
     csrw sepc, t0
     ld t0, TF_SSTATUS(sp)
@@ -221,64 +231,5 @@ trap_register_window_end:
     addi sp, sp, 128
     ret
     .size trap_register_test, . - trap_register_test
-
-    .align 2
-    .globl user_enter
-    .type user_enter, @function
-user_enter:
-    addi sp, sp, -128
-    sd ra, 0(sp)
-    sd gp, 8(sp)
-    sd tp, 16(sp)
-    sd s0, 24(sp)
-    sd s1, 32(sp)
-    sd s2, 40(sp)
-    sd s3, 48(sp)
-    sd s4, 56(sp)
-    sd s5, 64(sp)
-    sd s6, 72(sp)
-    sd s7, 80(sp)
-    sd s8, 88(sp)
-    sd s9, 96(sp)
-    sd s10, 104(sp)
-    sd s11, 112(sp)
-    .option push
-    .option norelax
-    la t0, user_kernel_sp
-    .option pop
-    sd sp, 0(t0)
-
-    csrw sepc, a0
-    csrr t0, sstatus
-    li t1, ((1 << 8) | (1 << 1))
-    not t1, t1
-    and t0, t0, t1
-    ori t0, t0, (1 << 5)
-    csrw sstatus, t0
-    csrw sscratch, sp
-    mv sp, a1
-    mv a0, a2
-    sret
-
-    .globl user_resume_kernel
-user_resume_kernel:
-    ld ra, 0(sp)
-    ld gp, 8(sp)
-    ld tp, 16(sp)
-    ld s0, 24(sp)
-    ld s1, 32(sp)
-    ld s2, 40(sp)
-    ld s3, 48(sp)
-    ld s4, 56(sp)
-    ld s5, 64(sp)
-    ld s6, 72(sp)
-    ld s7, 80(sp)
-    ld s8, 88(sp)
-    ld s9, 96(sp)
-    ld s10, 104(sp)
-    ld s11, 112(sp)
-    addi sp, sp, 128
-    ret
-    .size user_enter, . - user_enter
 
     .section .note.GNU-stack, "", @progbits

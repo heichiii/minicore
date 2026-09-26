@@ -1,6 +1,7 @@
 #include "page_alloc.h"
 
 #include "layout.h"
+#include "../kernel/sync.h"
 
 struct free_page {
     struct free_page *next;
@@ -97,25 +98,32 @@ bool page_allocator_init(const struct boot_info *info, uint64_t kernel_start,
 
 uint64_t page_alloc(void)
 {
+    uint64_t flags = irq_save();
     struct free_page *page = free_list;
 
-    if (!page)
+    if (!page) {
+        irq_restore(flags);
         return 0;
+    }
     free_list = page->next;
     --free_pages;
+    irq_restore(flags);
     return virt_to_phys(page);
 }
 
 void page_free(uint64_t physical)
 {
     struct free_page *page;
+    uint64_t flags;
 
     if ((physical & PAGE_MASK) != 0 || physical == 0)
         return;
+    flags = irq_save();
     page = phys_to_virt(physical);
     page->next = free_list;
     free_list = page;
     ++free_pages;
+    irq_restore(flags);
 }
 
 size_t page_free_count(void)

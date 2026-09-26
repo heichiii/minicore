@@ -1,6 +1,8 @@
 #include "scheduler.h"
 
 #include "sync.h"
+#include "process.h"
+#include "../arch/riscv/trap.h"
 #include "../arch/riscv/csr.h"
 #include "../arch/riscv/sbi.h"
 #include "../mm/heap.h"
@@ -23,6 +25,8 @@ struct context {
 
 struct thread {
     struct context context;
+    struct process *process;
+    struct trap_frame *user_frame;
     struct list_node all_link;
     struct list_node wait_link;
     enum thread_state state;
@@ -44,8 +48,14 @@ static uint64_t tick_count;
 static uint64_t preemption_count;
 static uint64_t timer_interval;
 static bool timer_running;
+static const struct page_table *kernel_page_table;
 
-static _Noreturn void thread_exit(void);
+extern _Noreturn void user_thread_enter(void);
+
+struct process *current_process(void)
+{
+    return current ? current->process : 0;
+}
 
 static void thread_trampoline(void)
 {
@@ -58,6 +68,7 @@ static void idle_main(void *argument)
 {
     (void)argument;
     for (;;) {
+        scheduler_reap();
         __asm__ volatile("wfi");
         scheduler_yield();
     }
@@ -97,11 +108,14 @@ void scheduler_switch(void)
     }
     next->state = THREAD_RUNNING;
     current = next;
+    vm_activate(next->process ? &next->process->as.table : kernel_page_table);
     context_switch(&previous->context, &next->context);
 }
 
 static bool create_thread(const char *name, thread_entry entry,
-                          void *argument, bool idle)
+                          void *argument, bool idle,
+                          struct process *process,
+                          const struct trap_frame *initial)
 {
     struct thread *thread = kmalloc(sizeof(*thread));
     uint64_t stack;
@@ -122,16 +136,29 @@ static bool create_thread(const char *name, thread_entry entry,
     thread->stack_page = stack;
     thread->name = name;
     thread->idle = idle;
+    thread->process = process;
     thread->context.ra = (uintptr_t)thread_trampoline;
     thread->context.sp = (uintptr_t)phys_to_virt(stack) + PAGE_SIZE;
+    if (process) {
+        thread->user_frame = (struct trap_frame *)(uintptr_t)
+            (thread->context.sp - sizeof(struct trap_frame));
+        *thread->user_frame = *initial;
+        thread->user_frame->sstatus = SSTATUS_SPIE;
+        thread->context.sp = (uintptr_t)thread->user_frame;
+        thread->context.ra = (uintptr_t)user_thread_enter;
+    }
     list_push_back(&all_threads, &thread->all_link);
     if (idle)
         idle_thread = thread;
     return true;
 }
 
-bool scheduler_init(uint64_t timebase_frequency)
+bool scheduler_init(uint64_t timebase_frequency,
+                    const struct page_table *kernel_table)
 {
+    if (!kernel_table || !kernel_table->root)
+        return false;
+    kernel_page_table = kernel_table;
     memset(&bootstrap, 0, sizeof(bootstrap));
     list_init(&all_threads);
     list_init(&bootstrap.all_link);
@@ -145,7 +172,7 @@ bool scheduler_init(uint64_t timebase_frequency)
     timer_interval = timebase_frequency / 200;
     if (timer_interval == 0)
         timer_interval = 1;
-    if (!create_thread("idle", idle_main, 0, true))
+    if (!create_thread("idle", idle_main, 0, true, 0, 0))
         return false;
     timer_running = true;
     sbi_set_timer(csr_read_time() + timer_interval);
@@ -162,7 +189,18 @@ bool thread_create(const char *name, thread_entry entry, void *argument)
     if (!entry)
         return false;
     flags = irq_save();
-    result = create_thread(name, entry, argument, false);
+    result = create_thread(name, entry, argument, false, 0, 0);
+    irq_restore(flags);
+    return result;
+}
+
+bool thread_create_user(struct process *process,
+                        const struct trap_frame *initial)
+{
+    uint64_t flags = irq_save();
+    bool result = process && initial &&
+        create_thread("user", 0, 0, false, process, initial);
+
     irq_restore(flags);
     return result;
 }
@@ -254,7 +292,7 @@ void scheduler_stop_timer(void)
     irq_restore(flags);
 }
 
-static _Noreturn void thread_exit(void)
+_Noreturn void thread_exit(void)
 {
     irq_save();
     current->state = THREAD_DEAD;
@@ -276,6 +314,8 @@ void scheduler_reap(void)
             thread->state == THREAD_DEAD) {
             list_remove(&thread->all_link);
             page_free(thread->stack_page);
+            if (thread->process)
+                process_reap(thread->process);
             kfree(thread);
         }
     }

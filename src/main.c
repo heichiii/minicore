@@ -185,7 +185,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     console_puts("M2 PASS\n");
     heap_init();
     log_init();
-    if (!scheduler_init(boot_info.timebase_frequency))
+    if (!scheduler_init(boot_info.timebase_frequency, &kernel_page_table))
         panic("cannot initialize scheduler");
     if (!user_run_m3_tests(&kernel_page_table))
         panic("U-mode/syscall self-test failed");
@@ -198,6 +198,9 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     console_puts("M4 PREEMPT PASS\n");
     console_puts("M4 WAIT PASS\n");
     console_puts("M4 PASS\n");
+    if (!user_run_thread_tests(&kernel_page_table))
+        panic("user thread/address-space self-test failed");
+    console_puts("M5 USER THREAD PASS\n");
     scheduler_stop_timer();
     platform_exit(true);
 }

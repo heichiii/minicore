@@ -23,3 +23,11 @@ permissions before copying through the RAM direct map. Consequently `SUM`
 stays clear throughout M3 and no recoverable supervisor fault window is needed.
 This is intentionally simple; a future demand-paged VM may replace it with a
 short, explicitly recoverable `SUM` access window.
+
+## M5 step 1 execution model
+
+The syscall numbers and user layout above are unchanged. Each user now runs as
+a scheduler thread in its own process address space. `exit` and user faults
+terminate that thread; another thread reclaims its resources. The test image
+remains embedded until the initramfs/ELF step. See
+[M5 user threads](m5-user-threads.md) for ownership and trap invariants.

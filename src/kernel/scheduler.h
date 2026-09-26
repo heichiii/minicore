@@ -6,9 +6,19 @@
 
 #include "list.h"
 
+struct process;
+struct page_table;
+struct trap_frame;
+
 typedef void (*thread_entry)(void *argument);
 
-bool scheduler_init(uint64_t timebase_frequency);
+bool scheduler_init(uint64_t timebase_frequency,
+                    const struct page_table *kernel_table);
+struct process *current_process(void);
+/* Transfers process ownership only on success. */
+bool thread_create_user(struct process *process,
+                        const struct trap_frame *initial);
+_Noreturn void thread_exit(void);
 bool thread_create(const char *name, thread_entry entry, void *argument);
 void scheduler_yield(void);
 void scheduler_sleep(uint64_t ticks);
