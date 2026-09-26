@@ -19,6 +19,14 @@ static inline uint64_t csr_read_time(void)
     return value;
 }
 
+static inline uint64_t csr_read_sstatus(void)
+{
+    uint64_t value;
+
+    __asm__ volatile("csrr %0, sstatus" : "=r"(value));
+    return value;
+}
+
 static inline void csr_write_stvec(uint64_t value)
 {
     __asm__ volatile("csrw stvec, %0" : : "r"(value) : "memory");

@@ -17,6 +17,10 @@ _start:
     j .Lfailed
 
 .Lnormal:
+    li a7, 3
+    ecall
+    bnez a0, .Lfailed
+
     /* Put eight bytes across the boundary between the two stack pages. */
     li t0, 0x3feffc
     li t1, 'M'

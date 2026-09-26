@@ -5,12 +5,14 @@
 #include "../mm/page_alloc.h"
 #include "../platform/platform.h"
 #include "../runtime.h"
+#include "scheduler.h"
 
 #define USER_CODE UINT64_C(0x10000)
 #define USER_STACK_TOP UINT64_C(0x400000)
 #define USER_STACK_PAGES 2U
 #define SYSCALL_WRITE UINT64_C(1)
 #define SYSCALL_EXIT UINT64_C(2)
+#define SYSCALL_YIELD UINT64_C(3)
 #define EXCEPTION_USER_ECALL UINT64_C(8)
 #define EXCEPTION_LOAD_PAGE_FAULT UINT64_C(13)
 #define EXCEPTION_STORE_PAGE_FAULT UINT64_C(15)
@@ -118,8 +120,10 @@ static void finish_user(struct trap_frame *frame, int64_t status,
     frame->x[1] = (uintptr_t)user_resume_kernel;
     frame->x[2] = user_kernel_sp;
     frame->sepc = (uintptr_t)user_resume_kernel;
-    frame->sstatus |= SSTATUS_SPP;
-    frame->sstatus &= ~(SSTATUS_SIE | SSTATUS_SPIE);
+    /* Return to the scheduler's supervisor context with interrupts enabled.
+     * sret copies SPIE into SIE, so setting SPIE here is intentional. */
+    frame->sstatus |= SSTATUS_SPP | SSTATUS_SPIE;
+    frame->sstatus &= ~SSTATUS_SIE;
 }
 
 static int64_t dispatch_syscall(struct trap_frame *frame)
@@ -136,6 +140,9 @@ static int64_t dispatch_syscall(struct trap_frame *frame)
     }
     case SYSCALL_EXIT:
         finish_user(frame, (int64_t)frame->x[10], 0);
+        return 0;
+    case SYSCALL_YIELD:
+        scheduler_yield();
         return 0;
     default:
         return -38;

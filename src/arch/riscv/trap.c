@@ -5,6 +5,7 @@
 #include "csr.h"
 #include "sbi.h"
 #include "../../kernel/user.h"
+#include "../../kernel/scheduler.h"
 #include "../../platform/platform.h"
 
 #define EXCEPTION_ILLEGAL_INSTRUCTION UINT64_C(2)
@@ -103,6 +104,10 @@ static void check_saved_registers(struct trap_frame *frame)
 
 static void handle_timer(struct trap_frame *frame)
 {
+    if (scheduler_timer_active()) {
+        scheduler_tick();
+        return;
+    }
     ++timer_ticks;
     if (test_running && in_register_window(frame->sepc)) {
         check_saved_registers(frame);

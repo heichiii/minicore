@@ -1,13 +1,15 @@
-# MiniCore M3 syscall ABI
+# MiniCore M4 syscall ABI
 
 User programs use the RV64 `lp64` integer ABI. `ecall` receives the syscall
 number in `a7`, up to three arguments in `a0`..`a2`, and returns a signed
-result in `a0`. Negative results are errors. M3 defines:
+result in `a0`. Negative results are errors. M3 defined `write` and `exit`; M4
+adds cooperative `yield`:
 
 | Number | Call | Arguments | Result |
 |---:|---|---|---|
 | 1 | `write` | `a0=fd`, `a1=buffer`, `a2=count` | bytes written or `-9` (`EBADF`) / `-14` (`EFAULT`) |
 | 2 | `exit` | `a0=status` | does not return |
+| 3 | `yield` | none | `0` |
 
 Descriptors 1 and 2 refer to the console through a `file_ops` object. Descriptor
 0 is currently closed. Unknown calls return `-38` (`ENOSYS`).

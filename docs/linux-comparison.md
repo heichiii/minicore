@@ -30,3 +30,22 @@ Like Linux, the syscall layer writes through a descriptor and operation table
 rather than calling the UART directly. M3 has a fixed three-entry fd table and
 one console file; reference counting, VFS objects, and concurrent access arrive
 in later milestones.
+
+## M4: allocation, scheduling, and waits
+
+MiniCore's size-class allocator resembles the object-cache role of Linux slab
+allocators, but has no per-CPU caches, constructors, debug metadata, or large
+allocation path. Empty slabs are returned immediately to the physical-page
+allocator.
+
+Its thread context contains only RISC-V callee-saved integer registers; trap
+frames preserve interrupted caller-saved state. The one-list round-robin
+scheduler has no priorities, affinity, load balancing, or scheduling classes.
+As in Linux, an idle thread runs when nothing else is runnable, timer ticks can
+preempt execution, and sleeping threads leave the run queue rather than spin.
+
+Wait queues use the same essential ordering as Linux wait primitives: enqueue
+while holding the condition lock, release it only after becoming non-runnable,
+and recheck conditions in a loop after wakeup. MiniCore currently relies on
+local interrupt exclusion because it is single-hart; this is not a substitute
+for global locking once SMP is enabled.

@@ -5,9 +5,13 @@
 #include "arch/riscv/csr.h"
 #include "arch/riscv/trap.h"
 #include "kernel/user.h"
+#include "kernel/log.h"
+#include "kernel/m4_test.h"
+#include "kernel/scheduler.h"
 #include "mm/layout.h"
 #include "mm/page_alloc.h"
 #include "mm/vm.h"
+#include "mm/heap.h"
 #include "platform/dtb.h"
 #include "platform/plic.h"
 #include "platform/platform.h"
@@ -100,7 +104,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     enum dtb_error error;
     char test[4];
 
-    console_puts("\nMiniCore M3\nhart = ");
+    console_puts("\nMiniCore M4\nhart = ");
     console_puthex(hart_id);
     console_puts("\ndtb  = ");
     console_puthex((uintptr_t)dtb);
@@ -179,10 +183,21 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
         panic("physical page/Sv39 self-test failed");
     console_puts("M2 VM PASS\n");
     console_puts("M2 PASS\n");
+    heap_init();
+    log_init();
+    if (!scheduler_init(boot_info.timebase_frequency))
+        panic("cannot initialize scheduler");
     if (!user_run_m3_tests(&kernel_page_table))
         panic("U-mode/syscall self-test failed");
     console_puts("M3 COPY PASS\n");
     console_puts("M3 ISOLATION PASS\n");
     console_puts("M3 PASS\n");
+    if (!run_m4_tests())
+        panic("M4 scheduler/synchronization self-test failed");
+    console_puts("M4 THREAD PASS\n");
+    console_puts("M4 PREEMPT PASS\n");
+    console_puts("M4 WAIT PASS\n");
+    console_puts("M4 PASS\n");
+    scheduler_stop_timer();
     platform_exit(true);
 }
