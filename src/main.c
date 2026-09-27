@@ -104,7 +104,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     enum dtb_error error;
     char test[4];
 
-    console_puts("\nMiniCore M4\nhart = ");
+    console_puts("\nMiniCore M5\nhart = ");
     console_puthex(hart_id);
     console_puts("\ndtb  = ");
     console_puthex((uintptr_t)dtb);
@@ -187,20 +187,21 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     log_init();
     if (!scheduler_init(boot_info.timebase_frequency, &kernel_page_table))
         panic("cannot initialize scheduler");
-    if (!user_run_m3_tests(&kernel_page_table))
-        panic("U-mode/syscall self-test failed");
-    console_puts("M3 COPY PASS\n");
-    console_puts("M3 ISOLATION PASS\n");
-    console_puts("M3 PASS\n");
     if (!run_m4_tests())
         panic("M4 scheduler/synchronization self-test failed");
     console_puts("M4 THREAD PASS\n");
     console_puts("M4 PREEMPT PASS\n");
     console_puts("M4 WAIT PASS\n");
     console_puts("M4 PASS\n");
-    if (!user_run_thread_tests(&kernel_page_table))
-        panic("user thread/address-space self-test failed");
-    console_puts("M5 USER THREAD PASS\n");
+    if (!user_run_m5(&kernel_page_table))
+        panic("M5 process/VFS/ELF self-test failed");
+    console_puts("M3 COPY PASS\n");
+    console_puts("M3 ISOLATION PASS\n");
+    console_puts("M3 PASS\n");
+    console_puts("M5 INITRAMFS PASS\n");
+    console_puts("M5 ELF PASS\n");
+    console_puts("M5 LIFECYCLE PASS\n");
+    console_puts("M5 PASS\n");
     scheduler_stop_timer();
     platform_exit(true);
 }

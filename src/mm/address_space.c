@@ -81,6 +81,41 @@ bool address_space_add_page(struct address_space *as, uint64_t address,
     return true;
 }
 
+bool address_space_clone(struct address_space *destination,
+                         const struct address_space *source,
+                         const struct page_table *kernel_table)
+{
+    if (!address_space_init(destination, kernel_table))
+        return false;
+    for (struct list_node *entry = source->pages.next;
+         entry != &source->pages; entry = entry->next) {
+        const struct user_page *page = container_of(entry,
+                                                     struct user_page, link);
+
+        if (!address_space_add_page(destination, page->virtual_address,
+                                    page->flags,
+                                    phys_to_virt(page->physical), PAGE_SIZE)) {
+            address_space_destroy(destination);
+            return false;
+        }
+    }
+    return true;
+}
+
+void address_space_move(struct address_space *destination,
+                        struct address_space *source)
+{
+    destination->table = source->table;
+    source->table.root = 0;
+    list_init(&destination->pages);
+    while (!list_empty(&source->pages)) {
+        struct list_node *entry = source->pages.next;
+
+        list_remove(entry);
+        list_push_back(&destination->pages, entry);
+    }
+}
+
 bool address_space_copy(struct address_space *as, void *buffer,
                         uint64_t address, size_t size, bool to_user)
 {

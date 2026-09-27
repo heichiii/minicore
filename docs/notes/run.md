@@ -1,7 +1,3 @@
-# TODO
-
-1. M1 test详情
-
 # Overview
 
 项目构建阶段和运行阶段都很重要。
@@ -425,6 +421,12 @@ RAM 中的 `kernel.elf` 进一步展开如下：
 QEMU 根据 ELF Program Header 的 `PhysAddr` 将各段放到 `0x80200000` 起的物理 RAM。OpenSBI 在 MMU 关闭的 S-mode 下跳到 `_start`，并传入 `a0 = hart ID`、`a1 = DTB 物理地址`。`_start` 建立临时页表后，再跳到 `0xffffffc080202000` 起的高半 `.text`。
 
 图中内核各节边界来自当前 `build/kernel.elf`；代码或数据大小变化后，除 `0x80200000` 入口和链接脚本明确固定的对齐关系外，其他边界可能随之变化。DTB 位置也由 QEMU 和 RAM 大小决定；例如 `-m 32M` 时，当前 QEMU 将它放在 `0x81e00000`。
+
+## 执行kernel前已分配的内存
+
+1. linker在bss预留的12K stack（kernel stack）
+
+
 
 ## 控制权交到kernel.elf
 

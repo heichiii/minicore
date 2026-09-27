@@ -50,13 +50,24 @@ and recheck conditions in a loop after wakeup. MiniCore currently relies on
 local interrupt exclusion because it is single-hart; this is not a substitute
 for global locking once SMP is enabled.
 
-## M5 step 1: process resources and execution context
+## M5: process resources, exec, and waiting
 
 MiniCore now separates process-owned address-space resources from a thread's
 kernel stack and saved execution state. These roles correspond to the address
 space and task concepts in Linux, but MiniCore permits only one thread per
-process, uses a page ledger instead of VMAs, and has no PID or zombie interface
-yet. Kernel threads explicitly use the kernel page table rather than borrowing
-a user's active address space. Reaping runs after switching away from the dead
-thread's stack and page table. A kernel-only completion observer temporarily
-stands in for the later parent/child wait mechanism.
+process and uses a page ledger instead of VMAs. Kernel threads explicitly use
+the kernel page table rather than borrowing a user's active address space.
+Reaping runs after switching away from the dead thread's stack and page table.
+
+MiniCore now has monotonically allocated PIDs, parent/child lists, zombie
+records, PID-1 orphan adoption, and blocking wait queues. Unlike Linux it has
+no PID namespaces, process groups, signals, wait options, encoded wait status,
+or multi-threaded exec rules. `fork` eagerly duplicates every user page rather
+than using copy-on-write. `exec` prepares a complete static ELF image and
+argument stack before replacing the old address space, following the same
+prepare-then-commit principle as Linux while supporting far fewer ELF and ABI
+features.
+
+The read-only newc initramfs provides vnode lookup and refcounted file objects.
+It is sufficient to decouple the ELF loader from storage, but lacks mounts,
+cwd, links, permissions, and userspace open/read calls; those arrive in M6.

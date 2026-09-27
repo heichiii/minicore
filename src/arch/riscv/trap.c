@@ -106,8 +106,6 @@ static void check_saved_registers(struct trap_frame *frame)
 static void handle_timer(struct trap_frame *frame)
 {
     if (scheduler_timer_active()) {
-        if (!(frame->sstatus & SSTATUS_SPP) && current_process())
-            ++current_process()->user_preemptions;
         scheduler_tick();
         return;
     }

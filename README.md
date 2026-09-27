@@ -16,16 +16,18 @@ illegal-instruction, breakpoint, and load-access-fault exceptions, then
 delivers three SBI timer interrupts while verifying every saved integer
 register. It then installs its final Sv39 page table and tests physical-page
 allocation, mapping, protection, unmapping, page-table reclamation, read-only
-text, and the kernel-stack guard page. It then runs an embedded U-mode program
-through the `write`, `exit`, and `yield` syscall ABI and checks cross-page copies, bad
-pointers, kernel isolation, RX user text, and complete address-space teardown.
-A successful boot then exercises the M4 heap, kernel threads, register-safe
-round-robin switching, timer preemption, sleeping, and wait-queue based
-producer/consumer synchronization. It prints `M4 PASS`, then tests independently scheduled user processes,
-user register/stack preservation, fault isolation, low-memory rollback and
-complete reclamation. It prints `M5 USER THREAD PASS` and exits QEMU.
-This is [M5 step 1](docs/m5-user-threads.md); ELF loading and the full process
-lifecycle remain subsequent work.
+text, and the kernel-stack guard page. A successful boot exercises the M4 heap,
+kernel threads, register-safe round-robin switching, timer preemption, sleeping,
+and wait-queue synchronization.
+
+M5 mounts an embedded read-only `newc` initramfs, loads `/init` as a static
+ELF64 program, and builds its `argc/argv/envp` stack. `/init` exercises
+`getpid`, eager-copy `fork`, transactional `exec`, `exit`, and blocking
+`waitpid`, including failed exec, invalid status pointers, zombie retry,
+orphan adoption, writable-memory independence, RX text, kernel isolation, and
+process-local crashes. A successful run releases every user page, page table,
+kernel stack, and descriptor reference, prints `M5 PASS`, and exits QEMU. See
+[the M5 design](docs/m5.md).
 `make test` runs this acceptance test with both 256 MiB and 32 MiB of RAM.
 
 ## Memory layout report

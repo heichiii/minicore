@@ -1,56 +1,67 @@
 #ifndef MINICORE_PROCESS_H
 #define MINICORE_PROCESS_H
 
+#include "list.h"
+#include "sync.h"
+#include "../arch/riscv/trap.h"
 #include "../mm/address_space.h"
 
 struct file;
+struct exec_arguments;
 
-/*
- * Temporary kernel-side completion object used by the M3/M5 acceptance
- * tests.  The test owns its storage and must keep it alive until reaped is
- * true.  The reaper writes all result fields before publishing reaped.
- *
- * This is deliberately not the userspace wait ABI.  PID, parent/child links,
- * zombie records and waitpid will replace it in the lifecycle step.
- */
+/* Kernel observer used only to wait for the root /init process. */
 struct process_result {
-    bool reaped;
+    volatile bool reaped;
     int64_t status;
     uint64_t fault;
-    uint64_t user_preemptions;
+};
+
+enum process_state {
+    /* The owning thread may execute or sleep. */
+    PROCESS_RUNNING,
+    /* Exit was recorded, but its thread/VM may still be active. */
+    PROCESS_ZOMBIE,
+    /* Runtime resources are gone; waitpid may consume this record. */
+    PROCESS_REAPABLE,
 };
 
 /*
- * Resources shared by the execution belonging to one process.  This stage
- * permits exactly one owning thread per process:
- *
- *   as               owns the user page table and user physical pages;
- *   fds              currently borrow static console objects;
- *   exit/fault       are filled exactly once when execution terminates;
- *   user_preemptions is acceptance-test instrumentation;
- *   result           is a borrowed observer used only by kernel tests.
- *
- * The scheduler thread owns its kernel stack and saved CPU state separately.
- * Later M5 work will add PID and parent/child state here; the VFS step will
- * replace borrowed console pointers with reference-counted open files.
+ * A process owns resources shared across its execution: address space, open
+ * files, identity, family links, and exit state.  Its one scheduler thread
+ * separately owns the kernel stack and saved CPU context.  Keeping those
+ * objects separate lets the scheduler leave a dead stack before this process's
+ * runtime resources are released.
  */
 struct process {
     struct address_space as;
     struct file *fds[3];
+    uint64_t pid;
+    struct process *parent;
+    struct list_node child_link;
+    struct list_node children;
+    struct wait_queue child_wait;
+    enum process_state state;
     int64_t exit_status;
     uint64_t fault_code;
-    uint64_t user_preemptions;
     struct process_result *result;
 };
 
-struct process *process_create(const struct page_table *kernel_table);
-
-/* Destroy an unpublished process, or one whose thread has already stopped. */
+void process_system_init(const struct page_table *kernel_table);
+/* Create an unpublished process with an empty user address space and new PID. */
+struct process *process_create(void);
+/* Destroy an unpublished process; no thread or family link may refer to it. */
 void process_destroy(struct process *process);
-
-/* Publish the final test result and destroy a dead process. */
-void process_reap(struct process *process);
-
-/* Record termination and switch away forever; this function cannot return. */
+/* Register the root process as PID 1 and the orphan adopter. */
+void process_set_init(struct process *process);
+uint64_t process_getpid(void);
+int64_t process_fork(const struct trap_frame *parent_frame);
+int64_t process_exec(struct trap_frame *frame, const char *path,
+                     const struct exec_arguments *arguments);
+int64_t process_waitpid(int64_t pid, uint64_t status_address,
+                        uint64_t options);
 _Noreturn void process_exit(int64_t status, uint64_t fault);
+
+/* Called by the scheduler only after it has left the dead thread's stack. */
+void process_thread_reaped(struct process *process);
+
 #endif

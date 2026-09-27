@@ -315,7 +315,7 @@ void scheduler_reap(void)
             list_remove(&thread->all_link);
             page_free(thread->stack_page);
             if (thread->process)
-                process_reap(thread->process);
+                process_thread_reaped(thread->process);
             kfree(thread);
         }
     }

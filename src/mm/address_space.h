@@ -48,6 +48,15 @@ void address_space_destroy(struct address_space *as);
 bool address_space_add_page(struct address_space *as, uint64_t address,
                             uint64_t flags, const void *data, size_t size);
 
+/* Eagerly duplicate every owned user page into a new address space. */
+bool address_space_clone(struct address_space *destination,
+                         const struct address_space *source,
+                         const struct page_table *kernel_table);
+
+/* Transfer all ownership from source into an empty destination. */
+void address_space_move(struct address_space *destination,
+                        struct address_space *source);
+
 /*
  * Copy size bytes between a kernel buffer and user virtual memory.  When
  * to_user is true, buffer is the source and address is the destination;
