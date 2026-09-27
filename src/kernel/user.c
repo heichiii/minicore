@@ -1,6 +1,7 @@
 #include "user.h"
 
 #include "elf.h"
+#include "fd.h"
 #include "process.h"
 #include "scheduler.h"
 #include "sync.h"
@@ -12,13 +13,6 @@
 #include "../platform/platform.h"
 #include "../runtime.h"
 
-#define SYSCALL_WRITE UINT64_C(1)
-#define SYSCALL_EXIT UINT64_C(2)
-#define SYSCALL_YIELD UINT64_C(3)
-#define SYSCALL_GETPID UINT64_C(4)
-#define SYSCALL_EXEC UINT64_C(5)
-#define SYSCALL_WAITPID UINT64_C(6)
-#define SYSCALL_FORK UINT64_C(7)
 #define EXCEPTION_USER_ECALL UINT64_C(8)
 
 /* The linker creates these symbols from build/initramfs.cpio. */
@@ -43,48 +37,14 @@ bool copy_to_user(uint64_t destination, const void *source, size_t size)
                                           destination, size, true));
 }
 
-static int64_t console_write(struct file *file, uint64_t address, size_t size)
-{
-    char buffer[64];
-    size_t done = 0;
-
-    (void)file;
-    if (address > UINT64_MAX - size)
-        return -USER_EFAULT;
-    while (done < size) {
-        size_t chunk = size - done;
-
-        if (chunk > sizeof(buffer))
-            chunk = sizeof(buffer);
-        if (!copy_from_user(buffer, address + done, chunk))
-            return -USER_EFAULT;
-        for (size_t i = 0; i < chunk; ++i)
-            console_putc(buffer[i]);
-        done += chunk;
-    }
-    return (int64_t)done;
-}
-
-static const struct file_ops console_ops = { .write = console_write };
-static struct file console_file = {
-    .ops = &console_ops,
-    .references = 1,
-    .permanent = true,
-};
-
-static void install_stdio(struct process *process)
-{
-    process->fds[1] = &console_file;
-    process->fds[2] = &console_file;
-}
-
 static bool copy_user_string(char *destination, size_t capacity,
                              uint64_t source)
 {
     if (!source || !capacity)
         return false;
     for (size_t i = 0; i < capacity; ++i) {
-        if (!copy_from_user(&destination[i], source + i, 1))
+        if (source > UINT64_MAX - i ||
+            !copy_from_user(&destination[i], source + i, 1))
             return false;
         if (!destination[i])
             return true;
@@ -98,6 +58,8 @@ static bool copy_user_vector(uint64_t vector, char strings[][EXEC_STRING_SIZE],
     *count = 0;
     if (!vector)
         return true;
+    if (vector > UINT64_MAX - (maximum + 1) * sizeof(uint64_t))
+        return false;
     while (*count < maximum) {
         uint64_t pointer;
 
@@ -135,28 +97,39 @@ static bool dispatch_syscall(struct trap_frame *frame, int64_t *result)
     struct process *current = current_process();
 
     switch (frame->x[17]) {
-    case SYSCALL_WRITE: {
-        uint64_t fd = frame->x[10];
-        struct file *file;
-
-        if (fd >= sizeof(current->fds) / sizeof(current->fds[0]) ||
-            !(file = current->fds[fd]) || !file->ops || !file->ops->write)
-            *result = -9;
+    case SYS_WRITE: case SYS_READ: case SYS_OPENAT: case SYS_CLOSE:
+    case SYS_DUP: case SYS_DUP2: case SYS_GETDENTS: case SYS_PIPE:
+    case SYS_CHDIR: case SYS_GETCWD: case SYS_LSEEK:
+        *result = fd_syscall(frame);
+        return true;
+    case SYS_BRK:
+        *result = address_space_brk(&current->as, frame->x[10]);
+        return true;
+    case SYS_MUNMAP:
+        *result = address_space_munmap(&current->as, frame->x[10], frame->x[11]);
+        return true;
+    case SYS_MMAP: {
+        uint64_t fd = frame->x[14];
+        struct file *file = fd < FD_COUNT ? current->fds[fd] : 0;
+        if (frame->x[12] > UINT32_MAX || frame->x[13] > UINT32_MAX ||
+            ((frame->x[13] & MAP_ANONYMOUS) && (int64_t)fd != -1))
+            *result = -E_INVAL;
         else
-            *result = file->ops->write(file, frame->x[11],
-                                       (size_t)frame->x[12]);
+            *result = address_space_mmap(&current->as, frame->x[10],
+                frame->x[11], (unsigned)frame->x[12], (unsigned)frame->x[13],
+                file, frame->x[15]);
         return true;
     }
-    case SYSCALL_EXIT:
+    case SYS_EXIT:
         process_exit((int64_t)frame->x[10], 0);
-    case SYSCALL_YIELD:
+    case SYS_YIELD:
         scheduler_yield();
         *result = 0;
         return true;
-    case SYSCALL_GETPID:
+    case SYS_GETPID:
         *result = (int64_t)process_getpid();
         return true;
-    case SYSCALL_EXEC: {
+    case SYS_EXEC: {
         struct exec_arguments *arguments = kmalloc(sizeof(*arguments));
         char path[EXEC_STRING_SIZE];
 
@@ -174,11 +147,11 @@ static bool dispatch_syscall(struct trap_frame *frame, int64_t *result)
         kfree(arguments);
         return *result != 0;
     }
-    case SYSCALL_WAITPID:
+    case SYS_WAITPID:
         *result = process_waitpid((int64_t)frame->x[10], frame->x[11],
                                   frame->x[12]);
         return true;
-    case SYSCALL_FORK:
+    case SYS_FORK:
         *result = process_fork(frame);
         return true;
     default:
@@ -226,7 +199,10 @@ static bool start_init(const struct page_table *kernel_table,
         return false;
     }
     address_space_move(&process->as, &image.as);
-    install_stdio(process);
+    if (fd_install_stdio(process)) {
+        process_destroy(process);
+        return false;
+    }
     process->result = result;
     frame.sepc = image.entry;
     frame.x[2] = image.stack_pointer;
@@ -288,12 +264,64 @@ static bool run_elf_allocation_test(const struct page_table *kernel_table)
            page_free_count() == baseline;
 }
 
-bool user_run_m5(const struct page_table *kernel_table)
+/* Exhaust real physical pages, then restore a small allocation budget. Every
+ * operation must either finish or unwind to the same free-page count. This
+ * catches intermediate page-table leaks that ordinary success tests miss. */
+static bool run_m6_allocation_test(const struct page_table *kernel_table)
+{
+    size_t baseline = page_free_count();
+    struct address_space source;
+    if (!address_space_init(&source, kernel_table)) return false;
+    int64_t mapping = address_space_mmap(&source, 0, 3 * PAGE_SIZE,
+        PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    if (mapping < 0) { address_space_destroy(&source); return false; }
+    uint64_t held = 0, page;
+    while ((page = page_alloc()) != 0) {
+        *(uint64_t *)phys_to_virt(page) = held; held = page;
+    }
+    bool passed = true, clone_failed = false, clone_succeeded = false;
+    bool map_failed = false, map_succeeded = false, brk_failed = false, brk_succeeded = false;
+    for (unsigned budget = 0; budget <= 24; ++budget) {
+        size_t before = page_free_count();
+        struct address_space copy;
+        if (address_space_clone(&copy, &source, kernel_table)) {
+            clone_succeeded = true; address_space_destroy(&copy);
+        } else clone_failed = true;
+        if (page_free_count() != before) { passed = false; break; }
+        int64_t at = address_space_mmap(&source, 0, 3 * PAGE_SIZE,
+            PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+        if (at >= 0) {
+            map_succeeded = true;
+            address_space_munmap(&source, (uint64_t)at, 3 * PAGE_SIZE);
+        } else map_failed = true;
+        if (page_free_count() != before) { passed = false; break; }
+        if (address_space_brk(&source, source.brk_base + 3 * PAGE_SIZE) >= 0) {
+            brk_succeeded = true;
+            address_space_brk(&source, source.brk_base);
+        } else brk_failed = true;
+        struct file *reader, *writer;
+        if (!pipe_create(&reader, &writer)) { file_put(reader); file_put(writer); }
+        if (page_free_count() != before || source.brk_end != source.brk_base) {
+            passed = false; break;
+        }
+        if (held) {
+            page = held; held = *(uint64_t *)phys_to_virt(page); page_free(page);
+        }
+    }
+    while (held) {
+        page = held; held = *(uint64_t *)phys_to_virt(page); page_free(page);
+    }
+    address_space_destroy(&source);
+    return passed && clone_failed && clone_succeeded && map_failed && map_succeeded &&
+           brk_failed && brk_succeeded && page_free_count() == baseline;
+}
+
+bool user_run_tests(const struct page_table *kernel_table)
 {
     struct process_result result = {0};
     size_t archive_size = (size_t)(_binary_build_initramfs_cpio_end -
                                    _binary_build_initramfs_cpio_start);
-    size_t baseline;
+    size_t baseline = page_free_count();
 
     if (!vfs_init(_binary_build_initramfs_cpio_start, archive_size))
         return false;
@@ -301,13 +329,18 @@ bool user_run_m5(const struct page_table *kernel_table)
     if (!run_elf_allocation_test(kernel_table))
         return false;
     console_puts("M5 ALLOCATION ROLLBACK PASS\n");
-    baseline = page_free_count();
+    if (!run_m6_allocation_test(kernel_table)) return false;
+    console_puts("M6 ALLOCATION ROLLBACK PASS\n");
     if (!start_init(kernel_table, &result))
         return false;
     while (!result.reaped) {
         scheduler_reap();
         scheduler_yield();
     }
+    /* Namespace storage lives longer than processes. Release it separately
+     * so the final allocator check includes tmpfs pages and every vnode. */
+    if (file_live_count()) return false;
+    vfs_shutdown();
     if (result.status != 0 || result.fault != 0 ||
         page_free_count() != baseline) {
         console_puts("M5 init status=");

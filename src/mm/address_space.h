@@ -4,13 +4,26 @@
 #include <stddef.h>
 #include "vm.h"
 #include "../kernel/list.h"
+#include "../abi.h"
+
+enum area_kind { AREA_ELF, AREA_STACK, AREA_HEAP, AREA_ANON, AREA_FILE };
+/* VMA records describe reservations, even PROT_NONE with no hardware leaf.
+ * Ranges are page-aligned half-open intervals. Page ownership remains in the
+ * separate page ledger; splitting a VMA never duplicates physical storage. */
+struct vm_area {
+    struct list_node link;
+    uint64_t start, end, flags;
+    enum area_kind kind;
+};
+struct file;
 
 /*
- * A process address space combines two kinds of state that have different
+ * A process address space combines three kinds of state that have different
  * jobs:
  *
  *   table  - the Sv39 translation structure consumed by the CPU;
  *   pages  - the kernel's ownership ledger for user data/code pages.
+ *   areas  - virtual reservations and policy, including inaccessible regions.
  *
  * Page-table leaves tell the CPU where a virtual address points, but they do
  * not by themselves say who must free the referenced physical page.  Every
@@ -27,6 +40,8 @@
 struct address_space {
     struct page_table table;
     struct list_node pages;
+    struct list_node areas;
+    uint64_t brk_base, brk_end;
 };
 
 /* Create an empty lower half and attach the shared kernel upper half. */
@@ -66,4 +81,19 @@ void address_space_move(struct address_space *destination,
  */
 bool address_space_copy(struct address_space *as, void *buffer,
                         uint64_t address, size_t size, bool to_user);
+bool address_space_validate(struct address_space *, uint64_t, size_t, bool);
+/* Reserve only metadata; callers subsequently populate the range with pages.
+ * Every interval is disjoint. Failure leaves existing reservations intact. */
+bool address_space_reserve(struct address_space *, uint64_t, uint64_t,
+                           uint64_t, enum area_kind);
+/* brk(0) queries; other requests eagerly grow/shrink the fixed heap. The exact
+ * byte break is recorded, but hardware protection remains page-granular. */
+int64_t address_space_brk(struct address_space *, uint64_t);
+/* Eager, private mappings only. File contents are copied without advancing its
+ * offset, so no file reference is needed after a successful mmap. */
+int64_t address_space_mmap(struct address_space *, uint64_t, uint64_t,
+                           unsigned, unsigned, struct file *, uint64_t);
+/* Round length up; reject ELF/stack/heap intersections before any mutation.
+ * A middle cut splits one VMA, but preserves the surviving physical pages. */
+int64_t address_space_munmap(struct address_space *, uint64_t, uint64_t);
 #endif

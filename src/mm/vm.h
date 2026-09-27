@@ -24,6 +24,7 @@ bool vm_create_user(struct page_table *table,
                     const struct page_table *kernel_table);
 void vm_destroy(struct page_table *table);
 void vm_destroy_user(struct page_table *table);
+void vm_prune_user(struct page_table *table);
 bool vm_map(struct page_table *table, uint64_t virtual_address,
             uint64_t physical_address, uint64_t flags);
 bool vm_unmap(struct page_table *table, uint64_t virtual_address);

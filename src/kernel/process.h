@@ -5,8 +5,10 @@
 #include "sync.h"
 #include "../arch/riscv/trap.h"
 #include "../mm/address_space.h"
+#include "../abi.h"
 
 struct file;
+struct vnode;
 struct exec_arguments;
 
 /* Kernel observer used only to wait for the root /init process. */
@@ -34,7 +36,11 @@ enum process_state {
  */
 struct process {
     struct address_space as;
-    struct file *fds[3];
+    struct file *fds[FD_COUNT];
+    /* Stable namespace pointers borrowed from mounts; inherited by fork and
+     * preserved by exec. M6 permits chdir, but has no chroot or unmount. */
+    struct vnode *root;
+    struct vnode *cwd;
     uint64_t pid;
     struct process *parent;
     struct list_node child_link;

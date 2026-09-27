@@ -15,6 +15,11 @@ void console_putc(char ch)
     UART0[0] = (uint8_t)ch;
 }
 
+int console_getc(void)
+{
+    return (UART0[5] & 1) ? UART0[0] : -1;
+}
+
 void console_puts(const char *s)
 {
     while (*s)

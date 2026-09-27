@@ -27,6 +27,15 @@ def main() -> None:
     archive = bytearray()
     add_entry(archive, ".", b"", 0o040755)
     add_entry(archive, "bin", b"", 0o040755)
+    # Real directory and symlink fixtures exercise component traversal; link
+    # payloads are paths, without the C-string terminator used for names.
+    add_entry(archive, "etc", b"", 0o040755)
+    add_entry(archive, "etc/message", b"abcdef\n", 0o100444)
+    add_entry(archive, "link", b"etc/message", 0o120777)
+    add_entry(archive, "abs-link", b"/etc/message", 0o120777)
+    add_entry(archive, "dir-link", b"etc", 0o120777)
+    add_entry(archive, "dangling", b"/missing", 0o120777)
+    add_entry(archive, "loop", b"/loop", 0o120777)
     for item in sys.argv[2:]:
         name, filename = item.split("=", 1)
         add_entry(archive, name, pathlib.Path(filename).read_bytes(), 0o100755)

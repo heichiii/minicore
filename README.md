@@ -26,9 +26,20 @@ ELF64 program, and builds its `argc/argv/envp` stack. `/init` exercises
 `waitpid`, including failed exec, invalid status pointers, zombie retry,
 orphan adoption, writable-memory independence, RX text, kernel isolation, and
 process-local crashes. A successful run releases every user page, page table,
-kernel stack, and descriptor reference, prints `M5 PASS`, and exits QEMU. See
+kernel stack, and descriptor reference. See
 [the M5 design](docs/m5.md).
-`make test` runs this acceptance test with both 256 MiB and 32 MiB of RAM.
+
+M6 adds VFS path traversal, symlinks, boot mounts, cwd, 32-entry fd tables,
+shared offsets, directory reads, blocking pipes, writable `/tmp`, and eager
+`brk`/private `mmap`/partial `munmap`. `/init` then executes the M6 acceptance
+suite, including a userspace shell with external commands, pipelines and
+`<`, `>`, `>>` redirection. The shell supports `-c` or scripts on stdin; the
+default boot runs automated tests and exits rather than waiting for input.
+See [the M6 implementation guide](docs/m6.md) and [syscall ABI](docs/syscall-abi.md).
+
+`make test` runs M1–M6 with both 256 MiB and 32 MiB of RAM, including
+allocation-failure rollback tests and a final zero-leak resource check.
+Successful boots print `M6 PASS` and exit QEMU.
 
 ## Memory layout report
 

@@ -9,11 +9,13 @@ QEMU_MEMORY ?= 256M
 TARGET := build/kernel.elf
 LINKER_SCRIPT := src/linker/linker.ld
 USER_PROGRAMS := init child crash text-fault kernel-fault
+USER_C_PROGRAMS := m6-test sh echo cat upper
 USER_ELFS := $(addprefix build/,$(addsuffix .user.elf,$(USER_PROGRAMS)))
+USER_ELFS += $(addprefix build/,$(addsuffix .user.elf,$(USER_C_PROGRAMS)))
 OBJS := build/main.o build/runtime.o build/dtb.o build/qemu-virt.o \
 	build/plic.o build/sbi.o build/trap.o build/page_alloc.o build/vm.o \
 	build/heap.o build/sync.o build/log.o build/scheduler.o build/m4-test.o \
-	build/address_space.o build/vfs.o build/elf.o build/process.o build/user.o \
+	build/address_space.o build/vfs.o build/pipe.o build/fd.o build/elf.o build/process.o build/user.o \
 	build/initramfs.o build/context-asm.o build/trap-asm.o build/head.o
 ARCH := -march=rv64imac_zicsr_zicntr_zifencei -mabi=lp64 -mcmodel=medany
 CFLAGS := $(ARCH) -std=c11 -O2 -g -Wall -Wextra -Werror \
@@ -105,13 +107,30 @@ build/%.user.elf: build/%.user.o user/program.ld
 	$(CC) $(ARCH) -nostdlib -static -no-pie -Wl,--build-id=none \
 		-T user/program.ld $< -o $@
 
+build/%.uc.o: user/%.c user/lib.h src/abi.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -msmall-data-limit=0 -c $< -o $@
+
+build/crt.user.o: user/crt.S
+	@mkdir -p build
+	$(CC) $(ARCH) -g -c $< -o $@
+
+build/runtime.uc.o: src/runtime.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -msmall-data-limit=0 -c $< -o $@
+
+$(addprefix build/,$(addsuffix .user.elf,$(USER_C_PROGRAMS))): build/%.user.elf: build/%.uc.o build/lib.uc.o build/runtime.uc.o build/crt.user.o user/program.ld
+	$(CC) $(ARCH) -nostdlib -static -no-pie -Wl,--build-id=none \
+		-T user/program.ld build/crt.user.o $< build/lib.uc.o build/runtime.uc.o -lgcc -o $@
+
 build/initramfs.cpio: $(USER_ELFS) user/bad.bin tools/mkinitramfs.py
 	$(PYTHON) tools/mkinitramfs.py $@ \
 		init=build/init.user.elf bin/child=build/child.user.elf \
 		bin/crash=build/crash.user.elf \
 		bin/text-fault=build/text-fault.user.elf \
 		bin/kernel-fault=build/kernel-fault.user.elf \
-		bin/bad=user/bad.bin
+		bin/bad=user/bad.bin \
+		$(foreach name,$(USER_C_PROGRAMS),bin/$(name)=build/$(name).user.elf)
 
 build/initramfs.o: build/initramfs.cpio
 	$(CROSS)objcopy -I binary -O elf64-littleriscv -B riscv \
@@ -137,11 +156,13 @@ run: $(TARGET)
 test: $(TARGET)
 	@set -e; for memory in 256M 32M; do \
 		log=build/test-$$memory.log; \
-		timeout 20s $(QEMU) -machine virt -m $$memory -smp 1 -nographic \
+		timeout 30s $(QEMU) -machine virt -m $$memory -smp 1 -nographic \
 			-bios default -kernel $(TARGET) >$$log 2>&1; \
 		grep -q "M4 PASS" $$log; \
 		grep -q "M5 PASS" $$log; \
-		echo "M1-M5 $$memory PASS"; \
+		grep -q "M6 USER PASS" $$log; \
+		grep -q "M6 PASS" $$log; \
+		echo "M1-M6 $$memory PASS"; \
 	done
 
 debug: $(TARGET)
@@ -181,3 +202,11 @@ build/elf.o: src/kernel/elf.c src/kernel/elf.h src/fs/vfs.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 -include $(wildcard build/*.d)
+
+build/pipe.o: src/fs/pipe.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/fd.o: src/kernel/fd.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@

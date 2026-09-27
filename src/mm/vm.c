@@ -239,6 +239,36 @@ void vm_destroy_user(struct page_table *table)
     table->root = 0;
 }
 
+/* map() can allocate an intermediate table before a later allocation fails.
+ * Reclaim empty private branches on rollback without touching live leaves or
+ * the shared kernel half. This keeps failed mmap/brk resource-neutral. */
+static bool prune_level(uint64_t physical, unsigned level)
+{
+    uint64_t *entries = phys_to_virt(physical);
+    for (size_t i = 0; level && i < 512; ++i) {
+        uint64_t entry = entries[i];
+        if ((entry & PTE_V) && !(entry & (PTE_R | PTE_W | PTE_X)) &&
+            prune_level(pte_physical(entry), level - 1)) {
+            page_free(pte_physical(entry)); entries[i] = 0;
+        }
+    }
+    return table_empty(entries);
+}
+
+void vm_prune_user(struct page_table *table)
+{
+    if (!table->root) return;
+    uint64_t *root = root_pointer(table);
+    for (size_t i = 0; i < 256; ++i) {
+        uint64_t entry = root[i];
+        if ((entry & PTE_V) && !(entry & (PTE_R | PTE_W | PTE_X)) &&
+            prune_level(pte_physical(entry), 1)) {
+            page_free(pte_physical(entry)); root[i] = 0;
+        }
+    }
+    vm_flush_all();
+}
+
 void vm_flush_all(void)
 {
     __asm__ volatile("sfence.vma zero, zero" : : : "memory");

@@ -168,9 +168,14 @@ _start:
     li a2, 13
     li a7, SYS_write
     ecall
-    li a0, 0
-    li a7, SYS_exit
+    /* M5 checks completed. Replace init with the M6 userspace acceptance
+       suite; PID 1 and stdio survive, and its final status reaches the kernel. */
+    la a0, m6_path
+    la a1, empty_vector
+    la a2, empty_vector
+    li a7, SYS_exec
     ecall
+    j fail
 
 exec_child:
     la a0, child_path
@@ -242,6 +247,7 @@ fail:
 
     .section .rodata
 missing_path:      .asciz "/missing"
+m6_path:           .asciz "/bin/m6-test"
 bad_path:          .asciz "/bin/bad"
 child_path:        .asciz "/bin/child"
 crash_path:        .asciz "/bin/crash"

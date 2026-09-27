@@ -104,7 +104,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     enum dtb_error error;
     char test[4];
 
-    console_puts("\nMiniCore M5\nhart = ");
+    console_puts("\nMiniCore M6\nhart = ");
     console_puthex(hart_id);
     console_puts("\ndtb  = ");
     console_puthex((uintptr_t)dtb);
@@ -193,8 +193,8 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     console_puts("M4 PREEMPT PASS\n");
     console_puts("M4 WAIT PASS\n");
     console_puts("M4 PASS\n");
-    if (!user_run_m5(&kernel_page_table))
-        panic("M5 process/VFS/ELF self-test failed");
+    if (!user_run_tests(&kernel_page_table))
+        panic("M5/M6 userspace self-test failed");
     console_puts("M3 COPY PASS\n");
     console_puts("M3 ISOLATION PASS\n");
     console_puts("M3 PASS\n");
@@ -202,6 +202,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     console_puts("M5 ELF PASS\n");
     console_puts("M5 LIFECYCLE PASS\n");
     console_puts("M5 PASS\n");
+    console_puts("M6 RESOURCE RECLAIM PASS\nM6 PASS\n");
     scheduler_stop_timer();
     platform_exit(true);
 }

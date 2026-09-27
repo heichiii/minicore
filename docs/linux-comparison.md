@@ -70,4 +70,20 @@ features.
 
 The read-only newc initramfs provides vnode lookup and refcounted file objects.
 It is sufficient to decouple the ELF loader from storage, but lacks mounts,
-cwd, links, permissions, and userspace open/read calls; those arrive in M6.
+cwd, links, permissions, and userspace open/read calls in the M5 snapshot.
+
+## M6: VFS descriptions and memory regions
+
+M6 separates fd slots, shared open descriptions, namespace nodes and boot
+mounts. Like the corresponding Linux concepts, dup/fork share an open offset,
+while independent opens do not. MiniCore intentionally omits unlink, inode
+permissions, mount namespaces and vnode reference counting: namespace nodes
+remain alive until shutdown. Pipes use wait queues and last-reference close
+semantics; console and initramfs use the same kernel-buffer file interface.
+
+VMA metadata is distinct from hardware page tables and physical-page ownership.
+Unlike Linux's demand-paged file mappings, MiniCore eagerly copies private file
+snapshots and anonymous pages. There is no MAP_SHARED, copy-on-write, writeback
+or partial protection change. The fixed layout, mapping limits and custom
+error/return conventions are specified in `syscall-abi.md`; they are teaching
+choices, not Linux ABI compatibility claims.

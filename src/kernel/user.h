@@ -15,6 +15,6 @@ bool copy_from_user(void *destination, uint64_t source, size_t size);
 bool copy_to_user(uint64_t destination, const void *source, size_t size);
 
 /* Mount the embedded initramfs, run /init, and wait for complete teardown. */
-bool user_run_m5(const struct page_table *kernel_table);
+bool user_run_tests(const struct page_table *kernel_table);
 
 #endif

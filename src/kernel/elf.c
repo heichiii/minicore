@@ -1,4 +1,6 @@
 #include "elf.h"
+#include "process.h"
+#include "scheduler.h"
 
 #include "../fs/vfs.h"
 #include "../mm/layout.h"
@@ -13,7 +15,7 @@
 #define ELF_FLAG_WRITE 2U
 #define ELF_FLAG_READ 4U
 #define ELF_MAX_HEADERS 16U
-#define USER_END (UINT64_C(1) << 38)
+#define USER_END UINT64_C(0x3fb000)
 #define USER_STACK_TOP UINT64_C(0x400000)
 #define USER_STACK_PAGES 4U
 
@@ -105,6 +107,8 @@ static bool load_segment(struct exec_image *image, struct file *file,
         return false;
     end = (program->virtual_address + program->memory_size + PAGE_MASK) &
           ~PAGE_MASK;
+    if (!address_space_reserve(&image->as, first, end, flags, AREA_ELF))
+        return false;
     for (uint64_t address = first; address < end; address += PAGE_SIZE) {
         if (!address_space_add_page(&image->as, address, flags, 0, 0))
             return false;
@@ -139,6 +143,10 @@ static bool build_stack(struct exec_image *image,
     size_t count = 0;
 
     /* The page below this fixed range is deliberately left unmapped. */
+    if (!address_space_reserve(&image->as,
+            USER_STACK_TOP - (USER_STACK_PAGES + 1) * PAGE_SIZE,
+            USER_STACK_TOP, PTE_U | PTE_R | PTE_W, AREA_STACK))
+        return false;
     for (size_t i = 0; i < USER_STACK_PAGES; ++i) {
         uint64_t address = USER_STACK_TOP - (USER_STACK_PAGES - i) * PAGE_SIZE;
 
@@ -188,12 +196,15 @@ bool elf_load(const struct page_table *kernel_table, const char *path,
               struct exec_image *image)
 {
     struct elf_header header;
-    struct file *file = vfs_open(path);
+    struct file *file = 0;
+    struct process *process = current_process();
     bool executable_entry = false;
     bool result = false;
     size_t length;
 
     memset(image, 0, sizeof(*image));
+    vfs_openat(process ? process->root : vfs_root(),
+               process ? process->cwd : vfs_root(), path, O_RDONLY, &file);
     if (!file)
         return false;
     length = file_size(file);

@@ -42,6 +42,8 @@ struct process *process_create(void)
     list_init(&process->children);
     wait_queue_init(&process->child_wait);
     process->state = PROCESS_RUNNING;
+    process->root = vfs_root();
+    process->cwd = process->root;
     flags = irq_save();
     spin_lock(&process_lock);
     process->pid = next_pid++;
@@ -55,7 +57,7 @@ void process_destroy(struct process *process)
     if (!process)
         return;
     address_space_destroy(&process->as);
-    for (size_t i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < FD_COUNT; ++i) {
         file_put(process->fds[i]);
         process->fds[i] = 0;
     }
@@ -103,7 +105,9 @@ int64_t process_fork(const struct trap_frame *parent_frame)
         return -PROCESS_ENOMEM;
     }
     address_space_move(&child->as, &copy);
-    for (size_t i = 0; i < 3; ++i) {
+    child->root = parent->root;
+    child->cwd = parent->cwd;
+    for (size_t i = 0; i < FD_COUNT; ++i) {
         child->fds[i] = parent->fds[i];
         file_get(child->fds[i]);
     }
@@ -251,7 +255,7 @@ void process_thread_reaped(struct process *process)
      * freeing the dead thread's kernel stack.
      */
     address_space_destroy(&process->as);
-    for (size_t i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < FD_COUNT; ++i) {
         file_put(process->fds[i]);
         process->fds[i] = 0;
     }
