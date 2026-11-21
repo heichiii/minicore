@@ -124,6 +124,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     if (!dtb || bss_test != 0 || strlen(test + 1) != 2)
         panic("self-test failed");
 
+    // Parse the DTB and initialize the boot_info structure
     error = dtb_parse(dtb, &boot_info);
     if (error != DTB_OK) {
         console_puts("DTB: ");
@@ -156,8 +157,12 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
         panic("DTB is missing required QEMU virt hardware");
 
     console_puts("M1 DTB PASS\n");
+
+    // Initialize the PLIC and trap handling
     if (!plic_init(&boot_info, hart_id))
         panic("cannot initialize PLIC interface");
+
+    // Initialize the trap handler and run the M1 self-tests
     if (!sbi_probe_extension(SBI_EXT_TIME))
         panic("SBI TIME extension is unavailable");
     trap_init();
@@ -166,6 +171,7 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     console_puts("M1 TRAP PASS\n");
     console_puts("M1 PASS\n");
 
+    // Initialize the page allocator and virtual memory
     if (!page_allocator_init(&boot_info, virt_to_phys(__kernel_start),
                              virt_to_phys(__kernel_end), boot_info.dtb_base,
                              boot_info.dtb_size))
