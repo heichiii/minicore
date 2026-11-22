@@ -68,6 +68,7 @@ struct node {
     /* 仅对根节点的直属 reserved-memory、cpus 节点置位。 */
     bool reserved_memory;
     bool cpus;
+    bool chosen;
 };
 
 /* 逐字节组装，既处理端序，也避免未对齐的整数访问；调用方保证可读长度。 */
@@ -563,6 +564,8 @@ static enum dtb_error record_property(struct node *node, const char *name,
     } else if (string_equal(name, "riscv,ndev")) {
         node->plic_source_count = value;
         node->plic_source_count_length = length;
+    } else if (node->chosen && string_equal(name, "bootargs")) {
+        info->interactive_shell = bytes_equal_string(value, length, "minicore.shell");
     } else if (node->cpus && string_equal(name, "timebase-frequency")) {
         if (length != 4)
             return DTB_ERR_PROPERTY;
@@ -609,6 +612,7 @@ static enum dtb_error parse_structure(const struct fdt_view *view,
             node->size_cells = 1;
             node->reserved_memory = depth == 1 &&
                                     name_equal(node, "reserved-memory");
+            node->chosen = depth == 1 && name_equal(node, "chosen");
             node->cpus = depth == 1 && name_equal(node, "cpus");
             /* 跳过节点名的 NUL，再跳过填充，令下一 token 从 4 字节边界开始。 */
             ++offset;

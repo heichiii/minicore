@@ -176,12 +176,12 @@ bool user_handle_trap(struct trap_frame *frame, uint64_t code)
 }
 
 static bool start_init(const struct page_table *kernel_table,
-                       struct process_result *result)
+                       struct process_result *result, bool interactive)
 {
     struct exec_arguments arguments = {
-        .argc = 1,
+        .argc = interactive ? 3 : 1,
         .envc = 1,
-        .argv = { "/init" },
+        .argv = { "/init", "/bin/sh", "-i" },
         .envp = { "BOOT=init" },
     };
     struct exec_image image;
@@ -316,7 +316,7 @@ static bool run_m6_allocation_test(const struct page_table *kernel_table)
            brk_failed && brk_succeeded && page_free_count() == baseline;
 }
 
-bool user_run_tests(const struct page_table *kernel_table)
+bool user_run_init(const struct page_table *kernel_table, bool interactive)
 {
     struct process_result result = {0};
     size_t archive_size = (size_t)(_binary_build_initramfs_cpio_end -
@@ -326,12 +326,14 @@ bool user_run_tests(const struct page_table *kernel_table)
     if (!vfs_init(_binary_build_initramfs_cpio_start, archive_size))
         return false;
     process_system_init(kernel_table);
-    if (!run_elf_allocation_test(kernel_table))
-        return false;
-    console_puts("M5 ALLOCATION ROLLBACK PASS\n");
-    if (!run_m6_allocation_test(kernel_table)) return false;
-    console_puts("M6 ALLOCATION ROLLBACK PASS\n");
-    if (!start_init(kernel_table, &result))
+    if (!interactive) {
+        if (!run_elf_allocation_test(kernel_table))
+            return false;
+        console_puts("M5 ALLOCATION ROLLBACK PASS\n");
+        if (!run_m6_allocation_test(kernel_table)) return false;
+        console_puts("M6 ALLOCATION ROLLBACK PASS\n");
+    }
+    if (!start_init(kernel_table, &result, interactive))
         return false;
     while (!result.reaped) {
         scheduler_reap();

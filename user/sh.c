@@ -119,13 +119,32 @@ int main(int argc, char **argv)
         memcpy(line, argv[2], strlen(argv[2]) + 1);
         return run(line);
     }
-    if (argc != 1) return 2;
+    bool interactive = argc == 2 && equal(argv[1], "-i");
+    if (argc != 1 && !interactive) return 2;
+    bool after_cr = false;
     size_t used = 0;
     int failed = 0;
     for (;;) {
         char c;
         long n = read(0, &c, 1);
         if (n < 0) return 1;
+        if (interactive && n) {
+            bool skip_lf = after_cr && c == '\n';
+            after_cr = c == '\r';
+            if (skip_lf) continue;
+            if (c == '\b' || c == 0x7f) {
+                if (used) {
+                    --used;
+                    if (write_all(2, "\b \b", 3)) return 1;
+                }
+                continue;
+            }
+            if (c == '\r') c = '\n';
+            if (c == '\t') c = ' ';
+            if (c != '\n' && (used + 1 >= sizeof(line) || (unsigned char)c < ' '))
+                continue;
+            if (write_all(2, &c, 1)) return 1;
+        }
         if (!n || c == '\n' || c == '\r') {
             line[used] = 0;
             if (used && run(line)) failed = 1;

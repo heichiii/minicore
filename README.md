@@ -11,6 +11,9 @@ make
 make run
 ```
 
+`make run` starts `/bin/sh` on the QEMU console. After the startup message,
+type `echo hello` and press Enter. The interactive shell echoes typed characters and supports Backspace. Press Ctrl-A then X to quit QEMU.
+
 During boot the high-half kernel checks DTB discovery, deliberately handles
 illegal-instruction, breakpoint, and load-access-fault exceptions, then
 delivers three SBI timer interrupts while verifying every saved integer
@@ -21,7 +24,7 @@ kernel threads, register-safe round-robin switching, timer preemption, sleeping,
 and wait-queue synchronization.
 
 M5 mounts an embedded read-only `newc` initramfs, loads `/init` as a static
-ELF64 program, and builds its `argc/argv/envp` stack. `/init` exercises
+ELF64 program, and builds its `argc/argv/envp` stack. In self-test mode, `/init` exercises
 `getpid`, eager-copy `fork`, transactional `exec`, `exit`, and blocking
 `waitpid`, including failed exec, invalid status pointers, zombie retry,
 orphan adoption, writable-memory independence, RX text, kernel isolation, and
@@ -34,7 +37,7 @@ shared offsets, directory reads, blocking pipes, writable `/tmp`, and eager
 `brk`/private `mmap`/partial `munmap`. `/init` then executes the M6 acceptance
 suite, including a userspace shell with external commands, pipelines and
 `<`, `>`, `>>` redirection. The shell supports `-c` or scripts on stdin; the
-default boot runs automated tests and exits rather than waiting for input.
+self-test boot runs automated tests and exits.
 See [the M6 implementation guide](docs/m6.md) and [syscall ABI](docs/syscall-abi.md).
 
 `make test` runs M1–M6 with both 256 MiB and 32 MiB of RAM, including

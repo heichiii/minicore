@@ -227,18 +227,20 @@ _Noreturn void kernel_main(uint64_t hart_id, const void *dtb)
     console_puts("M4 WAIT PASS\n");
     console_puts("M4 PASS\n");
 
-    /* 用户态测试共用一个入口，覆盖用户内存复制与隔离、从 initramfs
-     * 加载 ELF、进程生命周期和资源回收。整组成功后才输出各里程碑标记。 */
-    if (!user_run_tests(&kernel_page_table))
-        panic("M5/M6 userspace self-test failed");
-    console_puts("M3 COPY PASS\n");
-    console_puts("M3 ISOLATION PASS\n");
-    console_puts("M3 PASS\n");
-    console_puts("M5 INITRAMFS PASS\n");
-    console_puts("M5 ELF PASS\n");
-    console_puts("M5 LIFECYCLE PASS\n");
-    console_puts("M5 PASS\n");
-    console_puts("M6 RESOURCE RECLAIM PASS\nM6 PASS\n");
+    if (boot_info.interactive_shell)
+        console_puts("Starting /bin/sh on the console\n");
+    if (!user_run_init(&kernel_page_table, boot_info.interactive_shell))
+        panic("/init failed");
+    if (!boot_info.interactive_shell) {
+        console_puts("M3 COPY PASS\n");
+        console_puts("M3 ISOLATION PASS\n");
+        console_puts("M3 PASS\n");
+        console_puts("M5 INITRAMFS PASS\n");
+        console_puts("M5 ELF PASS\n");
+        console_puts("M5 LIFECYCLE PASS\n");
+        console_puts("M5 PASS\n");
+        console_puts("M6 RESOURCE RECLAIM PASS\nM6 PASS\n");
+    }
     /* 所有自检完成，先停用调度定时器，再向平台报告成功。 */
     scheduler_stop_timer();
     platform_exit(true);

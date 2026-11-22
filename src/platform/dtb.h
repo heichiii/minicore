@@ -32,6 +32,7 @@ struct boot_info {
     uint64_t timebase_frequency;
     uintptr_t dtb_base;
     size_t dtb_size;
+    bool interactive_shell;
     bool uart_present;
     bool plic_present;
 };

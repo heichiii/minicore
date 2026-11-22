@@ -10,6 +10,17 @@
     .globl _start
 _start:
     ld t0, 0(sp)
+    li t1, 3
+    bne t0, t1, self_test
+    /* /init /bin/sh -i: pass argv[1..] to the shell and inherit console fds. */
+    ld a0, 16(sp)
+    addi a1, sp, 16
+    li a2, 0
+    li a7, SYS_exec
+    ecall
+    j fail
+
+self_test:
     li t1, 1
     bne t0, t1, fail
     ld t0, 8(sp)

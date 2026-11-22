@@ -151,7 +151,7 @@ build/head.o: src/arch/riscv/head.S
 
 run: $(TARGET)
 	$(QEMU) -machine virt -m 256M -smp 1 -nographic \
-		-bios default -kernel $(TARGET)
+		-bios default -kernel $(TARGET) -append minicore.shell
 
 test: $(TARGET)
 	@set -e; for memory in 256M 32M; do \
