@@ -16,6 +16,8 @@
 #define EXCEPTION_STORE_PAGE_FAULT UINT64_C(15)
 #define INTERRUPT_SUPERVISOR_TIMER UINT64_C(5)
 
+/* trap.S 在栈上按固定偏移保存 x0～x31 和四个 CSR。C 代码通过同一块内存
+ * 读取异常原因，也能修改 sepc，决定 sret 恢复执行的位置。 */
 _Static_assert(sizeof(struct trap_frame) == 36 * sizeof(uint64_t),
                "trap frame must match trap.S");
 _Static_assert(offsetof(struct trap_frame, sepc) == 32 * sizeof(uint64_t),
@@ -30,6 +32,7 @@ extern char trap_register_window_start[], trap_register_window_end[];
 
 uint64_t trap_register_test_sp;
 
+/* 顺序与 trap_trigger_test_exceptions 的三条触发指令对应，每匹配一次才推进下标。 */
 static const uint64_t expected_exceptions[] = {
     EXCEPTION_ILLEGAL_INSTRUCTION,
     EXCEPTION_BREAKPOINT,
@@ -80,6 +83,8 @@ static _Noreturn void unexpected(const char *kind,
     platform_exit(false);
 }
 
+/* 自检触发异常后需要跳过故障指令。这里按指令首半字的低两位区分
+ * 本内核使用的 16 位压缩指令和 32 位指令，避免返回到同一条指令。 */
 static size_t trapped_instruction_size(uint64_t sepc)
 {
     const volatile uint16_t *instruction = (const volatile uint16_t *)sepc;
@@ -93,6 +98,8 @@ static bool in_register_window(uint64_t sepc)
            sepc < (uintptr_t)trap_register_window_end;
 }
 
+/* 汇编测试窗口内 x1～x31 的预置值等于寄存器编号，唯独 x2 保留真实栈指针。
+ * 只在窗口内比对，避开汇编装载测试值和恢复原值的阶段。 */
 static void check_saved_registers(struct trap_frame *frame)
 {
     for (size_t index = 1; index < 32; ++index) {
@@ -105,6 +112,8 @@ static void check_saved_registers(struct trap_frame *frame)
 
 static void handle_timer(struct trap_frame *frame)
 {
+    /* 调度器启动后由 scheduler_tick 唤醒线程、重设定时器并调度。启动早期的
+     * M1 自检使用下面的独立计数，第三次命中窗口时改写返回地址以离开等待循环。 */
     if (scheduler_timer_active()) {
         scheduler_tick();
         return;
@@ -121,6 +130,7 @@ static void handle_timer(struct trap_frame *frame)
 
 void trap_dispatch(struct trap_frame *frame)
 {
+    /* scause 最高位区分中断与同步异常，两类原因码可以相同，须先判断最高位。 */
     uint64_t code = frame->scause & ~SCAUSE_INTERRUPT;
 
     if ((frame->scause & SCAUSE_INTERRUPT) != 0) {
@@ -131,9 +141,12 @@ void trap_dispatch(struct trap_frame *frame)
         unexpected("unexpected interrupt", frame);
     }
 
+    /* 用户进程的 U 模式异常由用户层分派系统调用或终止故障进程。 */
     if (user_handle_trap(frame, code))
         return;
 
+    /* 内核缺页自检同时核对读写类型和 stval 中的故障虚拟地址。
+     * 匹配后置位并跳过本次访存，供发起探测的代码判断结果。 */
     if (page_fault_test_running && code == expected_page_fault &&
         frame->stval == expected_fault_address) {
         print_trap(code == EXCEPTION_LOAD_PAGE_FAULT ? "load page fault"
@@ -160,6 +173,7 @@ bool trap_expect_page_fault(volatile uint64_t *address, bool write)
 {
     uint64_t ignored = 0;
 
+    /* 在 volatile 访存前登记预期异常。若访问意外成功，分派器就不会设置 page_fault_seen。 */
     expected_page_fault = write ? EXCEPTION_STORE_PAGE_FAULT
                                 : EXCEPTION_LOAD_PAGE_FAULT;
     expected_fault_address = (uintptr_t)address;
@@ -176,6 +190,7 @@ bool trap_expect_page_fault(volatile uint64_t *address, bool write)
 
 void trap_init(void)
 {
+    /* 先关闭 S 模式中断总开关和各中断源，再把 stvec 指向统一的汇编入口。 */
     csr_clear_sstatus(SSTATUS_SIE);
     csr_clear_sie(UINT64_MAX);
     csr_write_stvec((uintptr_t)trap_entry);
@@ -194,6 +209,8 @@ bool trap_run_m1_tests(uint64_t timebase_frequency)
         sizeof(expected_exceptions) / sizeof(expected_exceptions[0]))
         return false;
 
+    /* 同步异常序列通过后，用约 100 Hz 的定时中断检查寄存器现场。
+     * 汇编探测返回后关闭定时中断，并将 SBI 截止值推至最远。 */
     timer_interval = timebase_frequency / 100;
     if (timer_interval == 0)
         timer_interval = 1;
