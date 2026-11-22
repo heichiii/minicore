@@ -10,8 +10,9 @@
     .globl trap_entry
     .type trap_entry, @function
 trap_entry:
-    /* sscratch is zero in S-mode.  While U-mode runs it contains the kernel
-     * stack pointer, so this swap selects a safe stack before any store. */
+    /* U 模式运行时，sscratch 保存本线程的内核栈顶。交换后 sp 即可建帧，
+     * 用户 sp 暂存在 sscratch。若交换得到零，说明来自 S 模式，
+     * 再交换一次取回原内核 sp，继续沿当前栈向下分配。 */
     csrrw sp, sscratch, sp
     bnez sp, .Ltrap_have_stack
     csrrw sp, sscratch, sp
@@ -20,6 +21,8 @@ trap_entry:
     sd zero, TF_X(0)(sp)
     sd ra, TF_X(1)(sp)
     sd t0, TF_X(5)(sp)
+    /* x2 槽记录陷入前的 sp。先填入建帧前的内核 sp；若 SPP 为零，
+     * 则用 sscratch 中的用户 sp 覆盖。之后清零 sscratch 以标记内核态。 */
     addi t0, sp, TF_SIZE
     sd t0, TF_X(2)(sp)
     csrr t0, sstatus
@@ -67,7 +70,8 @@ trap_entry:
     csrr t0, stval
     sd t0, TF_STVAL(sp)
 
-    /* C code must not inherit a deliberately clobbered or future user gp. */
+    /* 被中断的 gp 已保存在帧中。调用 C 前要装入内核 gp，因为用户程序
+     * 和寄存器自检都可能给 gp 设置不同的值。a0 按调用约定传递帧地址。 */
     .option push
     .option norelax
     la gp, __global_pointer$
@@ -77,13 +81,15 @@ trap_entry:
 
     .globl user_thread_enter
 user_thread_enter:
-    /* sp points to this thread's initial or trapped user frame. */
+    /* 普通陷阱处理从上方顺序执行到这里；新用户线程则由 context_switch
+     * 首次切入这里。两条路径的 sp 都指向符合相同布局的帧。 */
     ld t0, TF_SEPC(sp)
     csrw sepc, t0
     ld t0, TF_SSTATUS(sp)
     csrw sstatus, t0
 
-    /* Keep the saved privilege bit as an epilogue discriminator. */
+    /* 分派已结束，可以借用 stval 槽暂存 SPP。恢复通用寄存器后，
+     * 仍能根据该位选择返回内核或用户态的栈恢复路径。 */
     andi t0, t0, (1 << 8)
     sd t0, TF_STVAL(sp)
 
@@ -125,6 +131,8 @@ user_thread_enter:
     sret
 
 .Ltrap_return_user:
+    /* 先把用户 sp 放入 sscratch，再把内核 sp 移回栈顶。最后一次交换
+     * 同时恢复用户栈并为下次陷入留下内核栈顶，然后 sret 跳到 sepc。 */
     ld t0, TF_X(2)(sp)
     csrw sscratch, t0
     ld t0, TF_X(5)(sp)
@@ -139,6 +147,8 @@ user_thread_enter:
     .globl trap_trigger_test_exceptions
     .type trap_trigger_test_exceptions, @function
 trap_trigger_test_exceptions:
+    /* 依次尝试写只读 cycle、执行断点指令、读取零地址。
+     * M1 分派器每次将 sepc 移过故障指令，因此下一项测试能继续执行。 */
     csrw cycle, zero
     ebreak
     ld zero, 0(zero)
@@ -203,6 +213,8 @@ trap_register_test:
     li t6, 31
     .globl trap_register_window_start
 trap_register_window_start:
+    /* 此区间保持预设寄存器值。定时器处理程序第三次检查后，
+     * 把帧中的 sepc 改为 window_end，让 sret 直接进入恢复代码。 */
     wfi
     j trap_register_window_start
 
